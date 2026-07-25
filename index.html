@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>お酒フォト記録</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <button class="icon-btn" id="back-btn" hidden aria-label="戻る">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <div class="header-title" id="header-title">記録一覧</div>
+      <button class="header-action" id="header-action" hidden></button>
+    </header>
+
+    <div class="app-body">
+      <!-- 一覧 -->
+      <section class="screen" id="screen-collection">
+        <div class="search-field">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+          <input type="search" id="collection-search" placeholder="銘柄名で検索">
+        </div>
+        <div class="gallery" id="gallery"></div>
+      </section>
+
+      <!-- 登録 -->
+      <section class="screen" id="screen-register" hidden>
+        <div id="register-photos" class="wizard-step">
+          <p class="guide-text">ラベルの表と裏を撮影してください。裏面の情報から銘柄名や精米歩合を自動で読み取ります。表面・裏面どちらからでも、2枚まとめて選ぶと自動で振り分けられます。</p>
+          <div class="photo-pair">
+            <div class="photo-slot-wrap">
+              <span class="slot-label">表面</span>
+              <label class="photo-drop" id="front-drop">
+                <input type="file" id="front-photo" accept="image/*" multiple hidden>
+                <div class="photo-drop-empty" id="front-empty"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>タップして撮影・選択</div>
+                <div class="photo-drop-loading" id="front-loading" hidden><span class="ic hourglass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14M5 2h14M5 2v3.34a4 8 0 0 0 4 7.66 4 8 0 0 0-4 7.66V22M19 2v3.34a4 8 0 0 1-4 7.66 4 8 0 0 1 4 7.66V22"/></svg></span>読み込み中…</div>
+                <img id="front-preview" class="photo-drop-img" hidden alt="表ラベル">
+              </label>
+            </div>
+            <div class="photo-slot-wrap">
+              <span class="slot-label">裏面</span>
+              <label class="photo-drop" id="back-drop">
+                <input type="file" id="back-photo" accept="image/*" multiple hidden>
+                <div class="photo-drop-empty" id="back-empty"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>タップして撮影・選択</div>
+                <div class="photo-drop-loading" id="back-loading" hidden><span class="ic hourglass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14M5 2h14M5 2v3.34a4 8 0 0 0 4 7.66 4 8 0 0 0-4 7.66V22M19 2v3.34a4 8 0 0 1-4 7.66 4 8 0 0 1 4 7.66V22"/></svg></span>読み込み中…</div>
+                <img id="back-preview" class="photo-drop-img" hidden alt="裏ラベル">
+              </label>
+            </div>
+          </div>
+          <button type="button" class="btn-primary" id="start-scan-btn">記録する</button>
+        </div>
+
+        <div id="register-scanning" hidden>
+          <div class="spinner"></div>
+          <p class="scanning-title">裏面を解析しています…</p>
+          <p class="scanning-sub">銘柄名・蔵元名・精米歩合を読み取り中</p>
+        </div>
+
+        <form id="register-review" class="wizard-step" hidden>
+          <div class="tag-accent" id="review-tag">読み取り結果・内容を確認してください</div>
+
+          <label class="field">
+            <span class="field-label-row">銘柄名<span class="tag-mini" id="tag-brand" hidden>OCR</span></span>
+            <input type="text" id="f-brand" required autocomplete="off">
+          </label>
+          <div class="hint" id="again-hint" hidden></div>
+
+          <label class="field">
+            <span class="field-label-row">蔵元名<span class="tag-mini" id="tag-brewery" hidden>OCR</span></span>
+            <input type="text" id="f-brewery" autocomplete="off">
+          </label>
+
+          <div class="field-pair">
+            <label class="field">
+              <span class="field-label-row">精米歩合<span class="tag-mini" id="tag-seimai" hidden>OCR</span></span>
+              <input type="text" id="f-seimai" placeholder="例: 60%" autocomplete="off">
+            </label>
+            <label class="field">
+              <span class="field-label-row">酒米<span class="tag-mini" id="tag-sakemai" hidden>OCR</span></span>
+              <input type="text" id="f-sakemai" autocomplete="off">
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field-label-row">日本酒度<span class="tag-mini tag-outline" id="tag-nihonshudo">要入力</span></span>
+            <input type="text" id="f-nihonshudo" placeholder="読み取れませんでした。入力してください" autocomplete="off">
+          </label>
+
+          <hr class="hr">
+          <div class="section-label">ここは自分で入力する項目</div>
+
+          <label class="field">飲んだ日付
+            <input type="date" id="f-date" required>
+          </label>
+          <label class="field">飲んだ場所
+            <input type="text" id="f-place" placeholder="例: 自宅 / 居酒屋◯◯" autocomplete="off">
+          </label>
+          <label class="field">自分用メモ・感想
+            <textarea id="f-memo" rows="3" placeholder="香りや味の感想、また飲みたいかなど"></textarea>
+          </label>
+
+          <button type="submit" class="btn-primary">この内容で保存する</button>
+          <button type="button" class="btn-text" id="retake-btn">撮り直す</button>
+        </form>
+      </section>
+
+      <!-- 検索 -->
+      <section class="screen" id="screen-search" hidden>
+        <div class="search-field">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+          <input type="search" id="search-input" placeholder="ひらがな・カタカナ・一部一致でOK">
+        </div>
+        <p class="guide-text" id="search-empty-text">銘柄名や蔵元名を入力すると、飲んだことがあるか一瞬で分かる。</p>
+        <p class="guide-text" id="search-noresults-text" hidden></p>
+        <div class="search-results" id="search-results"></div>
+      </section>
+
+      <!-- 詳細 -->
+      <section class="screen" id="screen-detail" hidden>
+        <div class="detail-nav">
+          <button class="icon-btn" id="detail-prev" aria-label="前へ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <span class="detail-position" id="detail-position"></span>
+          <button class="icon-btn" id="detail-next" aria-label="次へ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div class="photo-pair">
+          <div class="detail-photo" id="detail-photo-front"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
+          <div class="detail-photo" id="detail-photo-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
+        </div>
+
+        <div id="detail-view">
+          <h2 class="detail-brand" id="detail-brand"></h2>
+          <p class="detail-brewery" id="detail-brewery"></p>
+          <hr class="hr">
+          <div class="detail-grid" id="detail-grid"></div>
+          <hr class="hr">
+          <div class="section-label">自分用メモ・感想</div>
+          <p class="detail-memo" id="detail-memo"></p>
+          <div class="detail-delete-row">
+            <button type="button" class="btn-ghost-danger" id="detail-delete-btn">削除する</button>
+          </div>
+        </div>
+
+        <form id="detail-edit" hidden>
+          <label class="field">銘柄名<input type="text" id="e-brand" required autocomplete="off"></label>
+          <label class="field">蔵元名<input type="text" id="e-brewery" autocomplete="off"></label>
+          <div class="field-pair">
+            <label class="field">精米歩合<input type="text" id="e-seimai" autocomplete="off"></label>
+            <label class="field">酒米<input type="text" id="e-sakemai" autocomplete="off"></label>
+          </div>
+          <label class="field">日本酒度<input type="text" id="e-nihonshudo" autocomplete="off"></label>
+          <label class="field">飲んだ日付<input type="date" id="e-date" required></label>
+          <label class="field">飲んだ場所<input type="text" id="e-place" autocomplete="off"></label>
+          <label class="field">自分用メモ・感想<textarea id="e-memo" rows="3"></textarea></label>
+          <button type="submit" class="btn-primary">変更を保存</button>
+        </form>
+
+        <div id="delete-confirm" hidden>
+          <p class="confirm-text">この記録を削除しますか？元に戻せません。</p>
+          <div class="confirm-actions">
+            <button type="button" class="btn-secondary" id="delete-cancel">キャンセル</button>
+            <button type="button" class="btn-danger" id="delete-confirm-btn">削除する</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <nav class="tab-bar">
+      <button class="tab-item" id="tab-home" data-screen="collection">
+        <span class="tab-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span><span>ホーム</span>
+      </button>
+      <button class="tab-item tab-register" id="tab-register" data-screen="register">
+        <span class="tab-add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span><span>記録</span>
+      </button>
+      <button class="tab-item" id="tab-search" data-screen="search">
+        <span class="tab-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span><span>検索</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
