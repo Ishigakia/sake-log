@@ -1,6 +1,11 @@
 const DB_NAME = "sakeLogDB";
 const STORE_NAME = "records";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
+
+// 他の端末とのGoogleドライブ同期に使う、このアプリ専用のOAuthクライアントID
+const GOOGLE_CLIENT_ID = "404021395027-lkd61q4gn8288r4jiom4m50al86v4c8u.apps.googleusercontent.com";
+const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_FILE_NAME = "sake-log-data.json";
 
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
 
@@ -43,6 +48,28 @@ function openDB() {
           cursor.continue();
         };
       }
+
+      // 複数端末での同期に備え、連番IDを世界で重複しないID(UUID)に振り直し、更新日時を付与する
+      if (event.oldVersion > 0 && event.oldVersion < 3) {
+        store.openCursor().onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (!cursor) return;
+          const r = cursor.value;
+          if (typeof r.id === "number") {
+            const oldId = r.id;
+            const migrated = {
+              ...r,
+              id: crypto.randomUUID(),
+              updatedAt: Date.now(),
+            };
+            cursor.delete();
+            store.add(migrated);
+          } else if (r.updatedAt === undefined) {
+            cursor.update({ ...r, updatedAt: Date.now() });
+          }
+          cursor.continue();
+        };
+      }
     };
 
     req.onsuccess = () => resolve(req.result);
@@ -52,15 +79,28 @@ function openDB() {
 
 async function addRecord(record) {
   const db = await openDB();
+  const withMeta = { ...record, id: record.id || crypto.randomUUID(), updatedAt: record.updatedAt || Date.now() };
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
-    const req = tx.objectStore(STORE_NAME).add(record);
+    const req = tx.objectStore(STORE_NAME).add(withMeta);
     req.onsuccess = () => resolve(req.result);
     tx.onerror = () => reject(tx.error);
   });
 }
 
 async function putRecord(record) {
+  const db = await openDB();
+  const withMeta = { ...record, updatedAt: Date.now() };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).put(withMeta);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// 同期用に、複数端末とデータをやり取りしても壊れないよう更新日時を保持したまま保存する
+async function putRecordAsIs(record) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
@@ -122,6 +162,25 @@ function resizeImage(file, maxSize = 1280, quality = 0.85) {
     img.onerror = reject;
     img.src = objectUrl;
   });
+}
+
+// 他端末との同期用に、表ラベルの小さいサムネイルを作る(フル解像度の写真自体は同期しない)
+function makeThumbnail(blob, maxSize = 200, quality = 0.7) {
+  return resizeImage(blob, maxSize, quality);
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function base64ToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return res.blob();
 }
 
 function escapeHtml(str) {
@@ -303,7 +362,8 @@ function showScreen(name, { fromScreen } = {}) {
   const title = document.getElementById("header-title");
 
   backBtn.hidden = !(name === "register" || name === "detail");
-  headerAction.hidden = name !== "detail";
+  headerAction.hidden = !(name === "detail" || name === "collection");
+  if (name === "collection") headerAction.textContent = "同期";
 
   if (name === "register") {
     title.textContent = STEP_TITLES[state.registerStep];
@@ -359,9 +419,10 @@ async function renderGallery() {
 
     const photo = document.createElement("div");
     photo.className = "shot-photo";
-    if (record.photoFrontBlob) {
+    const shotPhotoSrc = record.photoFrontBlob || record.photoThumbnail;
+    if (shotPhotoSrc) {
       const img = document.createElement("img");
-      img.src = trackUrl(URL.createObjectURL(record.photoFrontBlob));
+      img.src = trackUrl(URL.createObjectURL(shotPhotoSrc));
       photo.appendChild(img);
     } else {
       photo.innerHTML = ICON_IMAGE;
@@ -425,9 +486,10 @@ async function renderSearchResults() {
 
     const thumb = document.createElement("div");
     thumb.className = "result-thumb";
-    if (record.photoFrontBlob) {
+    const resultThumbSrc = record.photoFrontBlob || record.photoThumbnail;
+    if (resultThumbSrc) {
       const img = document.createElement("img");
-      img.src = trackUrl(URL.createObjectURL(record.photoFrontBlob));
+      img.src = trackUrl(URL.createObjectURL(resultThumbSrc));
       thumb.appendChild(img);
     } else {
       thumb.innerHTML = ICON_IMAGE;
@@ -482,8 +544,9 @@ function renderDetail() {
 
   const frontEl = document.getElementById("detail-photo-front");
   const backEl = document.getElementById("detail-photo-back");
-  frontEl.innerHTML = record.photoFrontBlob
-    ? `<img src="${trackUrl(URL.createObjectURL(record.photoFrontBlob))}" alt="表ラベル">`
+  const detailFrontSrc = record.photoFrontBlob || record.photoThumbnail;
+  frontEl.innerHTML = detailFrontSrc
+    ? `<img src="${trackUrl(URL.createObjectURL(detailFrontSrc))}" alt="表ラベル">`
     : ICON_IMAGE;
   backEl.innerHTML = record.photoBackBlob
     ? `<img src="${trackUrl(URL.createObjectURL(record.photoBackBlob))}" alt="裏ラベル">`
@@ -539,8 +602,11 @@ function setDetailEditing(editing) {
 }
 
 document.getElementById("header-action").addEventListener("click", () => {
-  if (state.screen !== "detail") return;
-  setDetailEditing(!state.editing);
+  if (state.screen === "detail") {
+    setDetailEditing(!state.editing);
+  } else if (state.screen === "collection") {
+    handleSyncClick();
+  }
 });
 
 document.getElementById("detail-edit").addEventListener("submit", async (e) => {
@@ -748,9 +814,11 @@ function checkAgainHint(brand) {
 
 document.getElementById("register-review").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const photoThumbnail = state.pendingFrontBlob ? await makeThumbnail(state.pendingFrontBlob) : null;
   const record = {
     photoFrontBlob: state.pendingFrontBlob,
     photoBackBlob: state.pendingBackBlob,
+    photoThumbnail,
     brand: document.getElementById("f-brand").value.trim(),
     brewery: document.getElementById("f-brewery").value.trim(),
     seimai: document.getElementById("f-seimai").value.trim(),
@@ -773,8 +841,192 @@ document.getElementById("register-review").addEventListener("submit", async (e) 
   showScreen("detail");
 });
 
+// --- Googleドライブ同期 ---
+let googleTokenClient = null;
+let googleAccessToken = null;
+
+function initGoogleAuth() {
+  if (typeof google === "undefined" || !google.accounts) return;
+  googleTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GOOGLE_DRIVE_SCOPE,
+    callback: () => {}, // requestGoogleToken()内で都度差し替える
+  });
+}
+
+function requestGoogleToken() {
+  return new Promise((resolve, reject) => {
+    if (!googleTokenClient) {
+      reject(new Error("Google認証の準備ができていません"));
+      return;
+    }
+    googleTokenClient.callback = (resp) => {
+      if (resp.error) {
+        reject(resp);
+        return;
+      }
+      googleAccessToken = resp.access_token;
+      resolve(googleAccessToken);
+    };
+    googleTokenClient.requestAccessToken({ prompt: "" });
+  });
+}
+
+async function driveFindFileId(token) {
+  const query = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name)`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error("ドライブのファイル検索に失敗しました");
+  const data = await res.json();
+  return data.files && data.files[0] ? data.files[0].id : null;
+}
+
+async function driveDownloadFile(token, fileId) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return { records: [] };
+  return res.json();
+}
+
+async function driveUploadFile(token, fileId, jsonData) {
+  const boundary = "sakelog-boundary";
+  const metadata = { name: DRIVE_FILE_NAME, mimeType: "application/json" };
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: application/json\r\n\r\n` +
+    `${JSON.stringify(jsonData)}\r\n` +
+    `--${boundary}--`;
+
+  const url = fileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+
+  const res = await fetch(url, {
+    method: fileId ? "PATCH" : "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+  if (!res.ok) throw new Error("ドライブへの保存に失敗しました");
+  return res.json();
+}
+
+// ローカルの記録をドライブ用のJSON形式に変換する(フル解像度写真は含めない、サムネイルのみ)
+async function recordsToSyncPayload(records) {
+  const out = [];
+  for (const r of records) {
+    const thumbSource = r.photoFrontBlob || r.photoThumbnail || null;
+    out.push({
+      id: r.id,
+      brand: r.brand,
+      brewery: r.brewery,
+      seimai: r.seimai,
+      sakemai: r.sakemai,
+      nihonshudo: r.nihonshudo,
+      date: r.date,
+      place: r.place,
+      memo: r.memo,
+      updatedAt: r.updatedAt || 0,
+      thumbnail: thumbSource ? await blobToBase64(thumbSource) : null,
+    });
+  }
+  return { records: out };
+}
+
+// 端末内の記録とドライブ上の記録を、更新日時が新しい方を採用してマージする(いわゆる「後勝ち」方式)
+async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
+  const localById = new Map(localRecords.map((r) => [r.id, r]));
+
+  for (const remote of remoteRecords) {
+    const local = localById.get(remote.id);
+
+    if (!local) {
+      // このデバイスにまだ無い記録 → 新規追加(サムネイルのみ、フル解像度写真は無し)
+      const photoThumbnail = remote.thumbnail ? await base64ToBlob(remote.thumbnail) : null;
+      await putRecordAsIs({
+        id: remote.id,
+        brand: remote.brand,
+        brewery: remote.brewery,
+        seimai: remote.seimai,
+        sakemai: remote.sakemai,
+        nihonshudo: remote.nihonshudo,
+        date: remote.date,
+        place: remote.place,
+        memo: remote.memo,
+        updatedAt: remote.updatedAt,
+        photoFrontBlob: null,
+        photoBackBlob: null,
+        photoThumbnail,
+      });
+      continue;
+    }
+
+    if ((remote.updatedAt || 0) > (local.updatedAt || 0)) {
+      // ドライブ側の方が新しい → 文字情報だけ上書き(このデバイスの写真はそのまま残す)
+      const photoThumbnail = remote.thumbnail ? await base64ToBlob(remote.thumbnail) : local.photoThumbnail || null;
+      await putRecordAsIs({
+        ...local,
+        brand: remote.brand,
+        brewery: remote.brewery,
+        seimai: remote.seimai,
+        sakemai: remote.sakemai,
+        nihonshudo: remote.nihonshudo,
+        date: remote.date,
+        place: remote.place,
+        memo: remote.memo,
+        updatedAt: remote.updatedAt,
+        photoThumbnail: local.photoFrontBlob ? local.photoThumbnail : photoThumbnail,
+      });
+    }
+  }
+}
+
+async function handleSyncClick() {
+  const headerAction = document.getElementById("header-action");
+  const originalText = "同期";
+  headerAction.textContent = "同期中…";
+
+  try {
+    if (!googleAccessToken) {
+      await requestGoogleToken();
+    }
+
+    let token = googleAccessToken;
+    let fileId = await driveFindFileId(token);
+    const remoteData = fileId ? await driveDownloadFile(token, fileId) : { records: [] };
+
+    const localRecords = await getAllRecords();
+    await mergeRemoteIntoLocal(localRecords, remoteData.records || []);
+
+    const mergedLocalRecords = await getAllRecords();
+    const payload = await recordsToSyncPayload(mergedLocalRecords);
+    await driveUploadFile(token, fileId, payload);
+
+    state.allRecords = await getAllRecords();
+    if (state.screen === "collection") renderGallery();
+
+    headerAction.textContent = `✓ ${mergedLocalRecords.length}件`;
+  } catch (err) {
+    console.error("同期に失敗しました", err);
+    headerAction.textContent = "同期失敗";
+  } finally {
+    setTimeout(() => {
+      if (state.screen === "collection") headerAction.textContent = originalText;
+    }, 2500);
+  }
+}
+
 // --- 初期化 ---
 (async function init() {
+  initGoogleAuth();
   document.getElementById("f-date").valueAsDate = new Date();
   state.allRecords = await getAllRecords();
   showScreen("collection");
