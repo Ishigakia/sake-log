@@ -989,7 +989,12 @@ async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
   }
 }
 
+let syncInProgress = false;
+
 async function handleSyncClick() {
+  if (syncInProgress) return;
+  syncInProgress = true;
+
   const headerAction = document.getElementById("header-action");
   const originalText = "同期";
   headerAction.textContent = "同期中…";
@@ -999,29 +1004,41 @@ async function handleSyncClick() {
       await requestGoogleToken();
     }
 
-    let token = googleAccessToken;
-    let fileId = await driveFindFileId(token);
+    const token = googleAccessToken;
+    const fileId = await driveFindFileId(token);
+    console.log("[sync] fileId:", fileId);
     const remoteData = fileId ? await driveDownloadFile(token, fileId) : { records: [] };
+    console.log("[sync] remote records:", (remoteData.records || []).length);
 
     const localRecords = await getAllRecords();
+    console.log("[sync] local records before merge:", localRecords.length);
     await mergeRemoteIntoLocal(localRecords, remoteData.records || []);
 
     const mergedLocalRecords = await getAllRecords();
+    console.log("[sync] local records after merge:", mergedLocalRecords.length);
     const payload = await recordsToSyncPayload(mergedLocalRecords);
-    await driveUploadFile(token, fileId, payload);
+    console.log("[sync] uploading payload with", payload.records.length, "records");
+    const uploadResult = await driveUploadFile(token, fileId, payload);
+    console.log("[sync] upload result:", uploadResult);
 
     state.allRecords = await getAllRecords();
     if (state.screen === "collection") renderGallery();
 
     headerAction.textContent = `✓ ${mergedLocalRecords.length}件`;
   } catch (err) {
-    console.error("同期に失敗しました", err);
-    headerAction.textContent = "同期失敗";
-  } finally {
+    console.error("[sync] 同期に失敗しました", err);
+    headerAction.textContent = `エラー: ${err.message || err}`;
     setTimeout(() => {
       if (state.screen === "collection") headerAction.textContent = originalText;
-    }, 2500);
+    }, 6000);
+    syncInProgress = false;
+    return;
   }
+
+  syncInProgress = false;
+  setTimeout(() => {
+    if (state.screen === "collection") headerAction.textContent = originalText;
+  }, 2500);
 }
 
 // --- 初期化 ---
