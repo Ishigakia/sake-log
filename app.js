@@ -824,6 +824,8 @@ document.getElementById("start-scan-btn").addEventListener("click", async () => 
   } catch (err) {
     console.error("OCR failed", err);
     fillReviewForm(emptyDraft(exifDate), { date: !!exifDate });
+    document.getElementById("review-tag").textContent =
+      "解析中にエラーが発生しました(" + (err && err.message ? err.message : "詳細不明") + ")。内容は手入力してください";
   }
   setRegisterStep("review");
 });
