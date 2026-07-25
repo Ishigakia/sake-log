@@ -183,6 +183,77 @@ async function base64ToBlob(dataUrl) {
   return res.blob();
 }
 
+// 写真のExif情報から撮影日を読み取る(JPEG以外や情報が無い場合はnull)
+function extractExifDate(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(parseExifDateFromBuffer(reader.result));
+      } catch (err) {
+        resolve(null);
+      }
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsArrayBuffer(file.slice(0, 128 * 1024)); // Exifはファイル冒頭にあるため先頭だけ読む
+  });
+}
+
+function parseExifDateFromBuffer(buffer) {
+  const view = new DataView(buffer);
+  if (view.getUint16(0) !== 0xffd8) return null; // JPEG以外は非対応
+
+  let offset = 2;
+  while (offset + 4 <= view.byteLength) {
+    const marker = view.getUint16(offset);
+    if ((marker & 0xff00) !== 0xff00) break;
+    const segmentLength = view.getUint16(offset + 2);
+    if (marker === 0xffe1 && view.getUint32(offset + 4) === 0x45786966) {
+      return readExifDateTags(view, offset + 10); // "Exif\0\0"の6バイト分進めてTIFF開始位置へ
+    }
+    offset += 2 + segmentLength;
+  }
+  return null;
+}
+
+function readExifDateTags(view, tiffStart) {
+  const little = view.getUint16(tiffStart) === 0x4949;
+  const ifd0Offset = tiffStart + view.getUint32(tiffStart + 4, little);
+
+  const exifIfdOffset = findExifTagValue(view, ifd0Offset, 0x8769, little);
+  if (exifIfdOffset) {
+    const original = readExifDateString(view, tiffStart + exifIfdOffset, tiffStart, 0x9003, little);
+    if (original) return original;
+  }
+  return readExifDateString(view, ifd0Offset, tiffStart, 0x0132, little);
+}
+
+function findExifTagValue(view, ifdStart, tag, little) {
+  const count = view.getUint16(ifdStart, little);
+  for (let i = 0; i < count; i++) {
+    const entry = ifdStart + 2 + i * 12;
+    if (view.getUint16(entry, little) === tag) {
+      return view.getUint32(entry + 8, little);
+    }
+  }
+  return null;
+}
+
+function readExifDateString(view, ifdStart, tiffStart, tag, little) {
+  const count = view.getUint16(ifdStart, little);
+  for (let i = 0; i < count; i++) {
+    const entry = ifdStart + 2 + i * 12;
+    if (view.getUint16(entry, little) === tag) {
+      const valueOffset = tiffStart + view.getUint32(entry + 8, little);
+      let str = "";
+      for (let j = 0; j < 19; j++) str += String.fromCharCode(view.getUint8(valueOffset + j));
+      const m = str.match(/^(\d{4}):(\d{2}):(\d{2})/); // "YYYY:MM:DD HH:MM:SS"形式
+      return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+    }
+  }
+  return null;
+}
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str || "";
@@ -298,6 +369,8 @@ const state = {
   pendingFrontBlob: null,
   pendingBackBlob: null,
   pendingBackRawFile: null,
+  pendingFrontExifPromise: null,
+  pendingBackExifPromise: null,
   draft: emptyDraft(),
   ocrFields: {},
   allRecords: [],
@@ -307,14 +380,14 @@ const state = {
   searchQuery: "",
 };
 
-function emptyDraft() {
+function emptyDraft(date) {
   return {
     brand: "",
     brewery: "",
     seimai: "",
     sakemai: "",
     nihonshudo: "",
-    date: new Date().toISOString().slice(0, 10),
+    date: date || new Date().toISOString().slice(0, 10),
     place: "",
     memo: "",
   };
@@ -654,14 +727,16 @@ function setPhotoLoading(loadingId, emptyId, isLoading) {
   document.getElementById(emptyId).hidden = isLoading;
 }
 
-function applyFrontPhoto(blob) {
+function applyFrontPhoto(blob, rawFile) {
   state.pendingFrontBlob = blob;
+  state.pendingFrontExifPromise = rawFile ? extractExifDate(rawFile) : Promise.resolve(null);
   showPhoto("front-preview", "front-empty", "front-loading", blob);
 }
 
 function applyBackPhoto(blob, rawFile) {
   state.pendingBackBlob = blob;
   state.pendingBackRawFile = rawFile || blob;
+  state.pendingBackExifPromise = rawFile ? extractExifDate(rawFile) : Promise.resolve(null);
   showPhoto("back-preview", "back-empty", "back-loading", blob);
 }
 
@@ -677,7 +752,7 @@ function setupPhotoSlot(inputId, onPickSingle) {
       setPhotoLoading("front-loading", "front-empty", true);
       setPhotoLoading("back-loading", "back-empty", true);
       const [frontBlob, backBlob] = await Promise.all([resizeImage(files[0]), resizeImage(files[1])]);
-      applyFrontPhoto(frontBlob);
+      applyFrontPhoto(frontBlob, files[0]);
       applyBackPhoto(backBlob, files[1]);
       return;
     }
@@ -696,6 +771,8 @@ function resetRegisterPhotos() {
   state.pendingFrontBlob = null;
   state.pendingBackBlob = null;
   state.pendingBackRawFile = null;
+  state.pendingFrontExifPromise = null;
+  state.pendingBackExifPromise = null;
   document.getElementById("front-preview").hidden = true;
   document.getElementById("front-empty").hidden = false;
   document.getElementById("front-loading").hidden = true;
@@ -717,9 +794,11 @@ function setRegisterStep(step) {
 document.getElementById("start-scan-btn").addEventListener("click", async () => {
   if (!state.pendingFrontBlob) return;
 
+  const exifDate = (await state.pendingFrontExifPromise) || (await state.pendingBackExifPromise) || null;
+
   if (!state.pendingBackBlob) {
     // 裏写真がない場合はOCRをスキップして手入力へ
-    fillReviewForm(emptyDraft(), {});
+    fillReviewForm(emptyDraft(exifDate), { date: !!exifDate });
     setRegisterStep("review");
     return;
   }
@@ -727,8 +806,8 @@ document.getElementById("start-scan-btn").addEventListener("click", async () => 
   setRegisterStep("scanning");
   try {
     const text = await runOcr(state.pendingBackRawFile || state.pendingBackBlob);
-    const draft = emptyDraft();
-    const ocrFields = {};
+    const draft = emptyDraft(exifDate);
+    const ocrFields = { date: !!exifDate };
 
     const brand = extractBrandGuess(text);
     if (brand) { draft.brand = brand; ocrFields.brand = true; }
@@ -744,7 +823,7 @@ document.getElementById("start-scan-btn").addEventListener("click", async () => 
     fillReviewForm(draft, ocrFields);
   } catch (err) {
     console.error("OCR failed", err);
-    fillReviewForm(emptyDraft(), {});
+    fillReviewForm(emptyDraft(exifDate), { date: !!exifDate });
   }
   setRegisterStep("review");
 });
@@ -766,6 +845,7 @@ function fillReviewForm(draft, ocrFields) {
   document.getElementById("tag-brewery").hidden = !ocrFields.brewery;
   document.getElementById("tag-seimai").hidden = !ocrFields.seimai;
   document.getElementById("tag-sakemai").hidden = !ocrFields.sakemai;
+  document.getElementById("tag-date").hidden = !ocrFields.date;
 
   const nihonshudoTag = document.getElementById("tag-nihonshudo");
   if (ocrFields.nihonshudo) {
