@@ -7,6 +7,10 @@ const GOOGLE_CLIENT_ID = "404021395027-lkd61q4gn8288r4jiom4m50al86v4c8u.apps.goo
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_FILE_NAME = "sake-log-data.json";
 
+// 裏ラベルOCR(Claude画像認識)の中継サーバー
+const OCR_WORKER_URL = "https://flat-sky-7e67.mfgyoh.workers.dev";
+const OCR_APP_SECRET = "sakelog2026xyz";
+
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
 
 function openDB() {
@@ -272,93 +276,25 @@ function toHiragana(str) {
     .toLowerCase();
 }
 
-// --- OCRテキストからの項目抽出 ---
-const RICE_VARIETIES = [
-  "山田錦", "五百万石", "美山錦", "雄町", "八反錦", "出羽燦々", "越淡麗",
-  "亀の尾", "神力", "ひとごこち", "たかね錦", "愛山", "雄山錦", "華吟", "越神楽",
-];
+// --- 裏ラベル写真の読み取り(Claude画像認識、中継サーバー経由) ---
+async function runVisionOcr(blob) {
+  const dataUrl = await blobToBase64(blob);
+  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) throw new Error("画像の変換に失敗しました");
+  const [, mediaType, imageBase64] = match;
 
-function extractSeimai(text) {
-  const m = text.match(/精米歩合[^0-9]{0,6}(\d{1,3})/) || text.match(/(\d{1,3})\s*%/);
-  return m ? `${m[1]}%` : "";
-}
-
-function extractNihonshudo(text) {
-  const m = text.match(/日本酒度[^+\-±0-9]{0,6}([+\-±]?\d{1,2}(?:\.\d)?)/);
-  if (m) return m[1];
-  const m2 = text.match(/(?:^|[^\w])([+\-±]\d{1,2}(?:\.\d)?)(?:[^\w]|$)/);
-  return m2 ? m2[1] : "";
-}
-
-function extractSakemai(text) {
-  return RICE_VARIETIES.find((v) => text.includes(v)) || "";
-}
-
-function extractBrandGuess(text) {
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length >= 2 && l.length <= 20 && !/^\d+$/.test(l));
-  return lines[0] || "";
-}
-
-function extractBreweryGuess(text, brandGuess) {
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length >= 2 && l.length <= 20 && !/^\d+$/.test(l) && l !== brandGuess);
-  return lines[0] || "";
-}
-
-// OCR用に高解像度化+グレースケール化+コントラスト強調してから読み取る
-// (保存用の写真は容量を抑えるため縮小しているが、小さい文字を読み取るにはそれでは解像度が足りないため別処理にしている)
-function preprocessForOcr(blob, maxSize = 2000) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > maxSize || height > maxSize) {
-        if (width > height) {
-          height = Math.round(height * (maxSize / width));
-          width = maxSize;
-        } else {
-          width = Math.round(width * (maxSize / height));
-          height = maxSize;
-        }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, width, height);
-
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const d = imageData.data;
-      const contrast = 1.4;
-      const intercept = 128 * (1 - contrast);
-      for (let i = 0; i < d.length; i += 4) {
-        const gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-        const v = Math.min(255, Math.max(0, gray * contrast + intercept));
-        d[i] = d[i + 1] = d[i + 2] = v;
-      }
-      ctx.putImageData(imageData, 0, 0);
-
-      URL.revokeObjectURL(objectUrl);
-      canvas.toBlob(resolve, "image/png");
-    };
-    img.onerror = reject;
-    img.src = objectUrl;
+  const res = await fetch(OCR_WORKER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-App-Secret": OCR_APP_SECRET,
+    },
+    body: JSON.stringify({ imageBase64, mediaType }),
   });
-}
-
-async function runOcr(blob) {
-  const ocrImage = await preprocessForOcr(blob);
-  const worker = await Tesseract.createWorker(["jpn", "jpn_vert", "eng"]);
-  await worker.setParameters({ tessedit_pageseg_mode: "11" }); // 11 = まばらな文字(縦書き・散らばったレイアウト向け)
-  const { data } = await worker.recognize(ocrImage);
-  await worker.terminate();
-  return data.text || "";
+  if (!res.ok) {
+    throw new Error(`OCRサーバーエラー(${res.status})`);
+  }
+  return res.json(); // { brand, brewery, seimai, sakemai, nihonshudo }
 }
 
 // --- アプリの状態 ---
@@ -368,7 +304,6 @@ const state = {
   registerStep: "photos",
   pendingFrontBlob: null,
   pendingBackBlob: null,
-  pendingBackRawFile: null,
   pendingFrontExifPromise: null,
   pendingBackExifPromise: null,
   draft: emptyDraft(),
@@ -735,7 +670,6 @@ function applyFrontPhoto(blob, rawFile) {
 
 function applyBackPhoto(blob, rawFile) {
   state.pendingBackBlob = blob;
-  state.pendingBackRawFile = rawFile || blob;
   state.pendingBackExifPromise = rawFile ? extractExifDate(rawFile) : Promise.resolve(null);
   showPhoto("back-preview", "back-empty", "back-loading", blob);
 }
@@ -770,7 +704,6 @@ setupPhotoSlot("back-photo", applyBackPhoto);
 function resetRegisterPhotos() {
   state.pendingFrontBlob = null;
   state.pendingBackBlob = null;
-  state.pendingBackRawFile = null;
   state.pendingFrontExifPromise = null;
   state.pendingBackExifPromise = null;
   document.getElementById("front-preview").hidden = true;
@@ -805,20 +738,15 @@ document.getElementById("start-scan-btn").addEventListener("click", async () => 
 
   setRegisterStep("scanning");
   try {
-    const text = await runOcr(state.pendingBackRawFile || state.pendingBackBlob);
+    const result = await runVisionOcr(state.pendingBackBlob);
     const draft = emptyDraft(exifDate);
     const ocrFields = { date: !!exifDate };
 
-    const brand = extractBrandGuess(text);
-    if (brand) { draft.brand = brand; ocrFields.brand = true; }
-    const brewery = extractBreweryGuess(text, brand);
-    if (brewery) { draft.brewery = brewery; ocrFields.brewery = true; }
-    const seimai = extractSeimai(text);
-    if (seimai) { draft.seimai = seimai; ocrFields.seimai = true; }
-    const sakemai = extractSakemai(text);
-    if (sakemai) { draft.sakemai = sakemai; ocrFields.sakemai = true; }
-    const nihonshudo = extractNihonshudo(text);
-    if (nihonshudo) { draft.nihonshudo = nihonshudo; ocrFields.nihonshudo = true; }
+    if (result.brand) { draft.brand = result.brand; ocrFields.brand = true; }
+    if (result.brewery) { draft.brewery = result.brewery; ocrFields.brewery = true; }
+    if (result.seimai) { draft.seimai = result.seimai; ocrFields.seimai = true; }
+    if (result.sakemai) { draft.sakemai = result.sakemai; ocrFields.sakemai = true; }
+    if (result.nihonshudo) { draft.nihonshudo = result.nihonshudo; ocrFields.nihonshudo = true; }
 
     fillReviewForm(draft, ocrFields);
   } catch (err) {
