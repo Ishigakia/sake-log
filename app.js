@@ -304,6 +304,7 @@ const state = {
   registerStep: "photos",
   pendingFrontBlob: null,
   pendingBackBlob: null,
+  pendingBackRawFile: null,
   pendingFrontExifPromise: null,
   pendingBackExifPromise: null,
   draft: emptyDraft(),
@@ -670,6 +671,7 @@ function applyFrontPhoto(blob, rawFile) {
 
 function applyBackPhoto(blob, rawFile) {
   state.pendingBackBlob = blob;
+  state.pendingBackRawFile = rawFile || blob; // OCR送信時に、保存用より高画質な画像を作るための元ファイル
   state.pendingBackExifPromise = rawFile ? extractExifDate(rawFile) : Promise.resolve(null);
   showPhoto("back-preview", "back-empty", "back-loading", blob);
 }
@@ -704,6 +706,7 @@ setupPhotoSlot("back-photo", applyBackPhoto);
 function resetRegisterPhotos() {
   state.pendingFrontBlob = null;
   state.pendingBackBlob = null;
+  state.pendingBackRawFile = null;
   state.pendingFrontExifPromise = null;
   state.pendingBackExifPromise = null;
   document.getElementById("front-preview").hidden = true;
@@ -738,7 +741,9 @@ document.getElementById("start-scan-btn").addEventListener("click", async () => 
 
   setRegisterStep("scanning");
   try {
-    const result = await runVisionOcr(state.pendingBackBlob);
+    // 保存用(容量重視)より高画質な画像を、読み取り専用にその場で作る
+    const ocrImage = await resizeImage(state.pendingBackRawFile || state.pendingBackBlob, 2000, 0.92);
+    const result = await runVisionOcr(ocrImage);
     const draft = emptyDraft(exifDate);
     const ocrFields = { date: !!exifDate };
 
