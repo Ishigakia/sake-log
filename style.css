@@ -535,7 +535,7 @@ body {
 .detail-position { font-size: 0.78rem; color: var(--ink-soft); }
 
 .detail-photo {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   border-radius: 14px;
   background: var(--line);
   display: flex;
@@ -546,7 +546,7 @@ body {
   overflow: hidden;
 }
 
-.detail-photo img { width: 100%; height: 100%; object-fit: cover; }
+.detail-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
 
 .detail-brand { font-size: 1.1rem; font-weight: 700; margin: 16px 0 2px; }
 .detail-brewery { font-size: 0.85rem; color: var(--ink-soft); margin: 0; }

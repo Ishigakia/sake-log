@@ -119,7 +119,14 @@ async function getAllRecords() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
     const req = tx.objectStore(STORE_NAME).getAll();
-    req.onsuccess = () => resolve(req.result.reverse());
+    req.onsuccess = () => {
+      // 新しい日付が上に来るよう並べ替え(同じ日付は更新が新しい順)
+      const records = req.result.sort((a, b) => {
+        if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
+      resolve(records);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -354,7 +361,7 @@ const STEP_TITLES = {
   review: "内容を確認",
 };
 
-function showScreen(name, { fromScreen } = {}) {
+function showScreen(name, { fromScreen, skipHistory } = {}) {
   if (fromScreen) state.returnScreen = fromScreen;
   state.screen = name;
 
@@ -380,13 +387,29 @@ function showScreen(name, { fromScreen } = {}) {
     title.textContent = SCREEN_TITLES[name];
   }
 
+  // register・detailは「戻る」で1つ前に戻れるよう履歴を1つ積む。
+  // collection・searchは並び替わりのタブなので、履歴は積まず置き換えるだけにする
+  // (これにより端末の戻るジェスチャーで画面遷移せずアプリごと終了するのを防ぐ)
+  if (!skipHistory) {
+    if (name === "register" || name === "detail") {
+      history.pushState({ screen: name }, "", location.href);
+    } else {
+      history.replaceState({ screen: name }, "", location.href);
+    }
+  }
+
   if (name === "collection") renderGallery();
   if (name === "search") renderSearchResults();
   if (name === "detail") renderDetail();
 }
 
 document.getElementById("back-btn").addEventListener("click", () => {
-  showScreen(state.returnScreen || "collection");
+  history.back();
+});
+
+// スマホの横スワイプ(戻るジェスチャー)でアプリごと終了せず、アプリ内の一つ前の画面に戻すための処理
+window.addEventListener("popstate", () => {
+  showScreen(state.returnScreen || "collection", { skipHistory: true });
 });
 
 document.querySelectorAll(".tab-item").forEach((btn) => {
@@ -845,15 +868,13 @@ document.getElementById("register-review").addEventListener("submit", async (e) 
   };
   if (!record.brand || !record.date) return;
 
-  const id = await addRecord(record);
+  await addRecord(record);
 
   resetRegisterPhotos();
   setRegisterStep("photos");
-  state.returnScreen = "collection";
 
   state.allRecords = await getAllRecords();
-  openDetailByRecord({ id }, "collection");
-  showScreen("detail");
+  showScreen("collection");
 });
 
 // --- Googleドライブ同期 ---
