@@ -959,7 +959,7 @@ async function driveUploadFile(token, fileId, jsonData) {
 async function recordsToSyncPayload(records) {
   const out = [];
   for (const r of records) {
-    const thumbSource = r.photoFrontBlob || r.photoThumbnail || null;
+    const thumbSource = r.photoThumbnail || r.photoFrontBlob || null;
     out.push({
       id: r.id,
       brand: r.brand,
