@@ -304,6 +304,23 @@ async function runVisionOcr(blob) {
   return res.json(); // { brand, brewery, seimai, sakemai, nihonshudo, prefecture }
 }
 
+// 過去の記録に都道府県だけを後から埋めるための、画像なし(銘柄名・蔵元名のテキストのみ)の問い合わせ
+async function guessPrefecture(brand, brewery) {
+  const res = await fetch(OCR_WORKER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-App-Secret": OCR_APP_SECRET,
+    },
+    body: JSON.stringify({ brand, brewery }),
+  });
+  if (!res.ok) {
+    throw new Error(`推測サーバーエラー(${res.status})`);
+  }
+  const result = await res.json(); // { prefecture }
+  return result.prefecture || "";
+}
+
 // --- アプリの状態 ---
 const state = {
   screen: "collection",
@@ -427,6 +444,13 @@ async function renderGallery() {
   const gallery = document.getElementById("gallery");
   const query = toHiragana(state.collectionQuery.trim());
 
+  const fillPrefectureBtn = document.getElementById("fill-prefecture-btn");
+  if (!prefectureFillInProgress) {
+    const missingCount = state.allRecords.filter((r) => !r.prefecture && (r.brand || r.brewery)).length;
+    fillPrefectureBtn.hidden = missingCount === 0;
+    fillPrefectureBtn.textContent = `都道府県を一括入力(${missingCount}件)`;
+  }
+
   const brandCounts = {};
   state.allRecords.forEach((r) => {
     brandCounts[r.brand] = (brandCounts[r.brand] || 0) + 1;
@@ -478,6 +502,41 @@ async function renderGallery() {
 document.getElementById("collection-search").addEventListener("input", (e) => {
   state.collectionQuery = e.target.value;
   renderGallery();
+});
+
+let prefectureFillInProgress = false;
+
+document.getElementById("fill-prefecture-btn").addEventListener("click", async () => {
+  if (prefectureFillInProgress) return;
+  prefectureFillInProgress = true;
+
+  const btn = document.getElementById("fill-prefecture-btn");
+  const targets = state.allRecords.filter((r) => !r.prefecture && (r.brand || r.brewery));
+  let done = 0;
+  let filled = 0;
+
+  for (const record of targets) {
+    btn.textContent = `処理中… (${done + 1}/${targets.length})`;
+    try {
+      const prefecture = await guessPrefecture(record.brand, record.brewery);
+      if (prefecture) {
+        await putRecord({ ...record, prefecture });
+        filled += 1;
+      }
+    } catch (err) {
+      console.error("[prefecture] 推測に失敗しました", record.brand, err);
+    }
+    done += 1;
+  }
+
+  btn.textContent = `完了(${filled}/${targets.length}件を入力)`;
+  state.allRecords = await getAllRecords();
+  if (state.screen === "collection") renderGallery();
+
+  setTimeout(() => {
+    prefectureFillInProgress = false;
+    if (state.screen === "collection") renderGallery();
+  }, 4000);
 });
 
 // --- 検索画面 ---
