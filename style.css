@@ -208,6 +208,12 @@ body {
   font-weight: 600;
 }
 
+.shot-missing {
+  margin-top: 3px;
+  font-size: 0.6rem;
+  color: var(--ink-soft);
+}
+
 .empty {
   text-align: center;
   color: var(--ink-soft);
@@ -409,21 +415,6 @@ body {
   cursor: pointer;
   text-align: center;
 }
-
-.btn-text-inline {
-  display: block;
-  background: transparent;
-  border: none;
-  color: var(--accent-ink);
-  font-size: 0.78rem;
-  font-weight: 700;
-  font-family: var(--font-body);
-  padding: 0;
-  margin: -4px 0 12px;
-  cursor: pointer;
-}
-
-.btn-text-inline[hidden] { display: none; }
 
 .btn-secondary {
   flex: 1;
