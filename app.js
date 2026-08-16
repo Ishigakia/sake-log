@@ -969,7 +969,11 @@ async function driveFindFileId(token) {
     `https://www.googleapis.com/drive/v3/files?q=${query}&spaces=drive&fields=files(id,name)`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) throw new Error("ドライブのファイル検索に失敗しました");
+  if (!res.ok) {
+    const err = new Error(`ドライブのファイル検索に失敗しました(${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
   return data.files && data.files[0] ? data.files[0].id : null;
 }
@@ -1006,7 +1010,11 @@ async function driveUploadFile(token, fileId, jsonData) {
     },
     body,
   });
-  if (!res.ok) throw new Error("ドライブへの保存に失敗しました");
+  if (!res.ok) {
+    const err = new Error(`ドライブへの保存に失敗しました(${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -1085,6 +1093,34 @@ async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
 
 let syncInProgress = false;
 
+async function runSyncOnce() {
+  if (!googleAccessToken) {
+    await requestGoogleToken();
+  }
+
+  const token = googleAccessToken;
+  const fileId = await driveFindFileId(token);
+  console.log("[sync] fileId:", fileId);
+  const remoteData = fileId ? await driveDownloadFile(token, fileId) : { records: [] };
+  console.log("[sync] remote records:", (remoteData.records || []).length);
+
+  const localRecords = await getAllRecords();
+  console.log("[sync] local records before merge:", localRecords.length);
+  await mergeRemoteIntoLocal(localRecords, remoteData.records || []);
+
+  const mergedLocalRecords = await getAllRecords();
+  console.log("[sync] local records after merge:", mergedLocalRecords.length);
+  const payload = await recordsToSyncPayload(mergedLocalRecords);
+  console.log("[sync] uploading payload with", payload.records.length, "records");
+  const uploadResult = await driveUploadFile(token, fileId, payload);
+  console.log("[sync] upload result:", uploadResult);
+
+  state.allRecords = await getAllRecords();
+  if (state.screen === "collection") renderGallery();
+
+  return mergedLocalRecords.length;
+}
+
 async function handleSyncClick() {
   if (syncInProgress) return;
   syncInProgress = true;
@@ -1094,31 +1130,20 @@ async function handleSyncClick() {
   headerAction.textContent = "同期中…";
 
   try {
-    if (!googleAccessToken) {
-      await requestGoogleToken();
+    let count;
+    try {
+      count = await runSyncOnce();
+    } catch (err) {
+      if (err.status === 401 && googleAccessToken) {
+        // 認証トークンが期限切れの可能性があるので、取り直して1回だけ再試行する
+        console.warn("[sync] 401のためトークンを取り直して再試行します");
+        googleAccessToken = null;
+        count = await runSyncOnce();
+      } else {
+        throw err;
+      }
     }
-
-    const token = googleAccessToken;
-    const fileId = await driveFindFileId(token);
-    console.log("[sync] fileId:", fileId);
-    const remoteData = fileId ? await driveDownloadFile(token, fileId) : { records: [] };
-    console.log("[sync] remote records:", (remoteData.records || []).length);
-
-    const localRecords = await getAllRecords();
-    console.log("[sync] local records before merge:", localRecords.length);
-    await mergeRemoteIntoLocal(localRecords, remoteData.records || []);
-
-    const mergedLocalRecords = await getAllRecords();
-    console.log("[sync] local records after merge:", mergedLocalRecords.length);
-    const payload = await recordsToSyncPayload(mergedLocalRecords);
-    console.log("[sync] uploading payload with", payload.records.length, "records");
-    const uploadResult = await driveUploadFile(token, fileId, payload);
-    console.log("[sync] upload result:", uploadResult);
-
-    state.allRecords = await getAllRecords();
-    if (state.screen === "collection") renderGallery();
-
-    headerAction.textContent = `✓ ${mergedLocalRecords.length}件`;
+    headerAction.textContent = `✓ ${count}件`;
   } catch (err) {
     console.error("[sync] 同期に失敗しました", err);
     headerAction.textContent = `エラー: ${err.message || err}`;
