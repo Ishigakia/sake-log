@@ -76,6 +76,10 @@
             <span class="field-label-row">蔵元名<span class="tag-mini" id="tag-brewery" hidden>OCR</span></span>
             <input type="text" id="f-brewery" autocomplete="off">
           </label>
+          <label class="field">
+            <span class="field-label-row">都道府県<span class="tag-mini" id="tag-prefecture" hidden>OCR</span></span>
+            <input type="text" id="f-prefecture" placeholder="例: 新潟県" autocomplete="off">
+          </label>
 
           <div class="field-pair">
             <label class="field">
@@ -134,9 +138,17 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>
         </div>
-        <div class="photo-pair">
-          <div class="detail-photo" id="detail-photo-front"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
-          <div class="detail-photo" id="detail-photo-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
+        <div class="photo-pair" id="detail-photo-pair">
+          <div class="detail-photo-slot" id="detail-photo-front-slot">
+            <div class="detail-photo" id="detail-photo-front"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
+            <input type="file" id="e-photo-front" accept="image/*" hidden>
+            <span class="detail-photo-edit-badge">写真を変更</span>
+          </div>
+          <div class="detail-photo-slot" id="detail-photo-back-slot">
+            <div class="detail-photo" id="detail-photo-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>
+            <input type="file" id="e-photo-back" accept="image/*" hidden>
+            <span class="detail-photo-edit-badge">写真を変更</span>
+          </div>
         </div>
 
         <div id="detail-view">
@@ -155,6 +167,7 @@
         <form id="detail-edit" hidden>
           <label class="field">銘柄名<input type="text" id="e-brand" required autocomplete="off"></label>
           <label class="field">蔵元名<input type="text" id="e-brewery" autocomplete="off"></label>
+          <label class="field">都道府県<input type="text" id="e-prefecture" placeholder="例: 新潟県" autocomplete="off"></label>
           <div class="field-pair">
             <label class="field">精米歩合<input type="text" id="e-seimai" autocomplete="off"></label>
             <label class="field">酒米<input type="text" id="e-sakemai" autocomplete="off"></label>

@@ -301,7 +301,7 @@ async function runVisionOcr(blob) {
   if (!res.ok) {
     throw new Error(`OCRサーバーエラー(${res.status})`);
   }
-  return res.json(); // { brand, brewery, seimai, sakemai, nihonshudo }
+  return res.json(); // { brand, brewery, seimai, sakemai, nihonshudo, prefecture }
 }
 
 // --- アプリの状態 ---
@@ -319,6 +319,8 @@ const state = {
   allRecords: [],
   selectedIndex: 0,
   editing: false,
+  pendingEditFrontBlob: null,
+  pendingEditBackBlob: null,
   collectionQuery: "",
   searchQuery: "",
 };
@@ -327,6 +329,7 @@ function emptyDraft(date) {
   return {
     brand: "",
     brewery: "",
+    prefecture: "",
     seimai: "",
     sakemai: "",
     nihonshudo: "",
@@ -361,7 +364,7 @@ const STEP_TITLES = {
   review: "内容を確認",
 };
 
-function showScreen(name, { fromScreen, skipHistory } = {}) {
+function showScreen(name, { fromScreen } = {}) {
   if (fromScreen) state.returnScreen = fromScreen;
   state.screen = name;
 
@@ -387,29 +390,25 @@ function showScreen(name, { fromScreen, skipHistory } = {}) {
     title.textContent = SCREEN_TITLES[name];
   }
 
-  // register・detailは「戻る」で1つ前に戻れるよう履歴を1つ積む。
-  // collection・searchは並び替わりのタブなので、履歴は積まず置き換えるだけにする
-  // (これにより端末の戻るジェスチャーで画面遷移せずアプリごと終了するのを防ぐ)
-  if (!skipHistory) {
-    if (name === "register" || name === "detail") {
-      history.pushState({ screen: name }, "", location.href);
-    } else {
-      history.replaceState({ screen: name }, "", location.href);
-    }
-  }
-
   if (name === "collection") renderGallery();
   if (name === "search") renderSearchResults();
   if (name === "detail") renderDetail();
 }
 
 document.getElementById("back-btn").addEventListener("click", () => {
-  history.back();
+  showScreen(state.returnScreen || "collection");
 });
 
-// スマホの横スワイプ(戻るジェスチャー)でアプリごと終了せず、アプリ内の一つ前の画面に戻すための処理
+// スマホの横スワイプ(戻るジェスチャー)でアプリごと終了しないための「見張り役」の履歴を1つ積んでおく。
+// register・detail画面にいる間にこの履歴が消費されたら、見張り役を積み直しつつアプリ内の前の画面に戻す。
+// 一覧・検索など根っこの画面では何もしない(そのままスワイプでアプリを終了できる)
+history.pushState({ appGuard: true }, "", location.href);
+
 window.addEventListener("popstate", () => {
-  showScreen(state.returnScreen || "collection", { skipHistory: true });
+  if (state.screen === "register" || state.screen === "detail") {
+    history.pushState({ appGuard: true }, "", location.href);
+    showScreen(state.returnScreen || "collection");
+  }
 });
 
 document.querySelectorAll(".tab-item").forEach((btn) => {
@@ -563,6 +562,18 @@ function openDetailByRecord(record, fromScreen) {
   showScreen("detail", { fromScreen });
 }
 
+function renderDetailPhotos(record) {
+  const frontEl = document.getElementById("detail-photo-front");
+  const backEl = document.getElementById("detail-photo-back");
+  const detailFrontSrc = record.photoFrontBlob || record.photoThumbnail;
+  frontEl.innerHTML = detailFrontSrc
+    ? `<img src="${trackUrl(URL.createObjectURL(detailFrontSrc))}" alt="表ラベル">`
+    : ICON_IMAGE;
+  backEl.innerHTML = record.photoBackBlob
+    ? `<img src="${trackUrl(URL.createObjectURL(record.photoBackBlob))}" alt="裏ラベル">`
+    : ICON_IMAGE;
+}
+
 function renderDetail() {
   const records = state.allRecords;
   const record = records[state.selectedIndex];
@@ -574,22 +585,13 @@ function renderDetail() {
   document.getElementById("detail-prev").style.opacity = state.selectedIndex <= 0 ? 0.35 : 1;
   document.getElementById("detail-next").style.opacity = state.selectedIndex >= records.length - 1 ? 0.35 : 1;
 
-  const frontEl = document.getElementById("detail-photo-front");
-  const backEl = document.getElementById("detail-photo-back");
-  const detailFrontSrc = record.photoFrontBlob || record.photoThumbnail;
-  frontEl.innerHTML = detailFrontSrc
-    ? `<img src="${trackUrl(URL.createObjectURL(detailFrontSrc))}" alt="表ラベル">`
-    : ICON_IMAGE;
-  backEl.innerHTML = record.photoBackBlob
-    ? `<img src="${trackUrl(URL.createObjectURL(record.photoBackBlob))}" alt="裏ラベル">`
-    : ICON_IMAGE;
-
   document.getElementById("detail-brand").textContent = record.brand;
   document.getElementById("detail-brewery").textContent = record.brewery;
   document.getElementById("detail-memo").textContent = record.memo || "";
 
   const grid = document.getElementById("detail-grid");
   grid.innerHTML = `
+    <div><span class="label">都道府県</span>${escapeHtml(record.prefecture) || "-"}</div>
     <div><span class="label">精米歩合</span>${escapeHtml(record.seimai) || "-"}</div>
     <div><span class="label">酒米</span>${escapeHtml(record.sakemai) || "-"}</div>
     <div><span class="label">日本酒度</span>${escapeHtml(record.nihonshudo) || "-"}</div>
@@ -619,19 +621,59 @@ function setDetailEditing(editing) {
   document.getElementById("detail-edit").hidden = !editing;
   document.getElementById("delete-confirm").hidden = true;
   document.getElementById("header-action").textContent = editing ? "完了" : "編集する";
+  document.getElementById("detail-photo-pair").classList.toggle("editing", editing);
+
+  const record = state.allRecords[state.selectedIndex];
+  if (!record) return;
 
   if (editing) {
-    const record = state.allRecords[state.selectedIndex];
     document.getElementById("e-brand").value = record.brand;
     document.getElementById("e-brewery").value = record.brewery;
+    document.getElementById("e-prefecture").value = record.prefecture || "";
     document.getElementById("e-seimai").value = record.seimai;
     document.getElementById("e-sakemai").value = record.sakemai;
     document.getElementById("e-nihonshudo").value = record.nihonshudo;
     document.getElementById("e-date").value = record.date;
     document.getElementById("e-place").value = record.place;
     document.getElementById("e-memo").value = record.memo;
+  } else {
+    // 保存せずに編集をやめた場合、選び直した写真の未保存プレビューを元に戻す
+    state.pendingEditFrontBlob = null;
+    state.pendingEditBackBlob = null;
+    renderDetailPhotos(record);
   }
 }
+
+document.getElementById("detail-photo-front-slot").addEventListener("click", () => {
+  if (state.editing) document.getElementById("e-photo-front").click();
+});
+document.getElementById("detail-photo-back-slot").addEventListener("click", () => {
+  if (state.editing) document.getElementById("e-photo-back").click();
+});
+
+async function applyDetailPhotoEdit(inputId, applyPending) {
+  const input = document.getElementById(inputId);
+  const file = input.files[0];
+  if (!file) return;
+  const blob = await resizeImage(file);
+  applyPending(blob);
+  input.value = ""; // 同じ写真を選び直しても change が発火するように
+}
+
+document.getElementById("e-photo-front").addEventListener("change", () =>
+  applyDetailPhotoEdit("e-photo-front", (blob) => {
+    state.pendingEditFrontBlob = blob;
+    document.getElementById("detail-photo-front").innerHTML =
+      `<img src="${trackUrl(URL.createObjectURL(blob))}" alt="表ラベル">`;
+  })
+);
+document.getElementById("e-photo-back").addEventListener("change", () =>
+  applyDetailPhotoEdit("e-photo-back", (blob) => {
+    state.pendingEditBackBlob = blob;
+    document.getElementById("detail-photo-back").innerHTML =
+      `<img src="${trackUrl(URL.createObjectURL(blob))}" alt="裏ラベル">`;
+  })
+);
 
 document.getElementById("header-action").addEventListener("click", () => {
   if (state.screen === "detail") {
@@ -644,10 +686,17 @@ document.getElementById("header-action").addEventListener("click", () => {
 document.getElementById("detail-edit").addEventListener("submit", async (e) => {
   e.preventDefault();
   const record = state.allRecords[state.selectedIndex];
+  const photoThumbnail = state.pendingEditFrontBlob
+    ? await makeThumbnail(state.pendingEditFrontBlob)
+    : record.photoThumbnail;
   const updated = {
     ...record,
+    photoFrontBlob: state.pendingEditFrontBlob || record.photoFrontBlob,
+    photoBackBlob: state.pendingEditBackBlob || record.photoBackBlob,
+    photoThumbnail,
     brand: document.getElementById("e-brand").value.trim(),
     brewery: document.getElementById("e-brewery").value.trim(),
+    prefecture: document.getElementById("e-prefecture").value.trim(),
     seimai: document.getElementById("e-seimai").value.trim(),
     sakemai: document.getElementById("e-sakemai").value.trim(),
     nihonshudo: document.getElementById("e-nihonshudo").value.trim(),
@@ -656,6 +705,8 @@ document.getElementById("detail-edit").addEventListener("submit", async (e) => {
     memo: document.getElementById("e-memo").value.trim(),
   };
   await putRecord(updated);
+  state.pendingEditFrontBlob = null;
+  state.pendingEditBackBlob = null;
   state.allRecords = await getAllRecords();
   renderDetail();
 });
@@ -772,6 +823,7 @@ document.getElementById("start-scan-btn").addEventListener("click", async () => 
 
     if (result.brand) { draft.brand = result.brand; ocrFields.brand = true; }
     if (result.brewery) { draft.brewery = result.brewery; ocrFields.brewery = true; }
+    if (result.prefecture) { draft.prefecture = result.prefecture; ocrFields.prefecture = true; }
     if (result.seimai) { draft.seimai = result.seimai; ocrFields.seimai = true; }
     if (result.sakemai) { draft.sakemai = result.sakemai; ocrFields.sakemai = true; }
     if (result.nihonshudo) { draft.nihonshudo = result.nihonshudo; ocrFields.nihonshudo = true; }
@@ -792,6 +844,7 @@ function fillReviewForm(draft, ocrFields) {
 
   document.getElementById("f-brand").value = draft.brand;
   document.getElementById("f-brewery").value = draft.brewery;
+  document.getElementById("f-prefecture").value = draft.prefecture;
   document.getElementById("f-seimai").value = draft.seimai;
   document.getElementById("f-sakemai").value = draft.sakemai;
   document.getElementById("f-nihonshudo").value = draft.nihonshudo;
@@ -801,6 +854,7 @@ function fillReviewForm(draft, ocrFields) {
 
   document.getElementById("tag-brand").hidden = !ocrFields.brand;
   document.getElementById("tag-brewery").hidden = !ocrFields.brewery;
+  document.getElementById("tag-prefecture").hidden = !ocrFields.prefecture;
   document.getElementById("tag-seimai").hidden = !ocrFields.seimai;
   document.getElementById("tag-sakemai").hidden = !ocrFields.sakemai;
   document.getElementById("tag-date").hidden = !ocrFields.date;
@@ -859,6 +913,7 @@ document.getElementById("register-review").addEventListener("submit", async (e) 
     photoThumbnail,
     brand: document.getElementById("f-brand").value.trim(),
     brewery: document.getElementById("f-brewery").value.trim(),
+    prefecture: document.getElementById("f-prefecture").value.trim(),
     seimai: document.getElementById("f-seimai").value.trim(),
     sakemai: document.getElementById("f-sakemai").value.trim(),
     nihonshudo: document.getElementById("f-nihonshudo").value.trim(),
@@ -964,6 +1019,7 @@ async function recordsToSyncPayload(records) {
       id: r.id,
       brand: r.brand,
       brewery: r.brewery,
+      prefecture: r.prefecture,
       seimai: r.seimai,
       sakemai: r.sakemai,
       nihonshudo: r.nihonshudo,
@@ -991,6 +1047,7 @@ async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
         id: remote.id,
         brand: remote.brand,
         brewery: remote.brewery,
+        prefecture: remote.prefecture,
         seimai: remote.seimai,
         sakemai: remote.sakemai,
         nihonshudo: remote.nihonshudo,
@@ -1012,6 +1069,7 @@ async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
         ...local,
         brand: remote.brand,
         brewery: remote.brewery,
+        prefecture: remote.prefecture,
         seimai: remote.seimai,
         sakemai: remote.sakemai,
         nihonshudo: remote.nihonshudo,
