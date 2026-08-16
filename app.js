@@ -508,6 +508,7 @@ document.querySelectorAll(".tab-item").forEach((btn) => {
 // --- 一覧画面 ---
 async function renderGallery() {
   state.allRecords = await getAllRecords();
+  document.getElementById("header-title").textContent = `記録一覧（${state.allRecords.length}件）`;
   const gallery = document.getElementById("gallery");
   const query = toHiragana(state.collectionQuery.trim());
 
