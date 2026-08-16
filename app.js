@@ -141,6 +141,23 @@ async function deleteRecord(id) {
   });
 }
 
+async function getRecord(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// 写真バックアップの完了フラグなど、更新日時に影響させたくない部分だけを差分更新する
+async function patchRecordAsIs(id, patch) {
+  const current = await getRecord(id);
+  if (!current) return;
+  await putRecordAsIs({ ...current, ...patch });
+}
+
 // 写真をリサイズ・圧縮してから保存する（IndexedDBの肥大化と一覧表示の重さを防ぐため）
 function resizeImage(file, maxSize = 1280, quality = 0.85) {
   return new Promise((resolve, reject) => {
@@ -319,6 +336,56 @@ async function guessPrefecture(brand, brewery) {
   }
   const result = await res.json(); // { prefecture }
   return result.prefecture || "";
+}
+
+// --- フル解像度写真のバックアップ(Cloudflare Worker経由でR2に保存) ---
+async function uploadPhotoToBackup(recordId, side, blob) {
+  const res = await fetch(`${OCR_WORKER_URL}/photo/${recordId}/${side}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "image/jpeg",
+      "X-App-Secret": OCR_APP_SECRET,
+    },
+    body: blob,
+  });
+  if (!res.ok) throw new Error(`写真バックアップに失敗しました(${res.status})`);
+}
+
+async function fetchPhotoFromBackup(recordId, side) {
+  const res = await fetch(`${OCR_WORKER_URL}/photo/${recordId}/${side}`, {
+    headers: { "X-App-Secret": OCR_APP_SECRET },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`写真の取得に失敗しました(${res.status})`);
+  return res.blob();
+}
+
+async function deletePhotosFromBackup(recordId) {
+  const res = await fetch(`${OCR_WORKER_URL}/photo/${recordId}`, {
+    method: "DELETE",
+    headers: { "X-App-Secret": OCR_APP_SECRET },
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`写真の削除に失敗しました(${res.status})`);
+}
+
+// 記録の保存直後に呼び、未アップロードの表裏写真をバックグラウンドでR2に送る(失敗しても例外は投げず、次回の同期時にリトライされる)
+async function backupRecordPhotos(record) {
+  const tasks = [];
+  if (record.photoFrontBlob && !record.photoFrontUploaded) {
+    tasks.push(
+      uploadPhotoToBackup(record.id, "front", record.photoFrontBlob)
+        .then(() => patchRecordAsIs(record.id, { photoFrontUploaded: true }))
+        .catch((err) => console.warn("[photo-backup] front failed", err))
+    );
+  }
+  if (record.photoBackBlob && !record.photoBackUploaded) {
+    tasks.push(
+      uploadPhotoToBackup(record.id, "back", record.photoBackBlob)
+        .then(() => patchRecordAsIs(record.id, { photoBackUploaded: true }))
+        .catch((err) => console.warn("[photo-backup] back failed", err))
+    );
+  }
+  await Promise.all(tasks);
 }
 
 // --- アプリの状態 ---
@@ -631,6 +698,35 @@ function renderDetailPhotos(record) {
   backEl.innerHTML = record.photoBackBlob
     ? `<img src="${trackUrl(URL.createObjectURL(record.photoBackBlob))}" alt="裏ラベル">`
     : ICON_IMAGE;
+
+  hydrateFullPhotos(record);
+}
+
+// このデバイスにフル解像度写真が無い記録(他端末で登録された記録など)は、詳細を開いたタイミングでR2から取得して補う
+async function hydrateFullPhotos(record) {
+  const jobs = [];
+  if (!record.photoFrontBlob) jobs.push(hydrateDetailPhotoSide(record.id, "front"));
+  if (!record.photoBackBlob) jobs.push(hydrateDetailPhotoSide(record.id, "back"));
+  await Promise.all(jobs);
+}
+
+async function hydrateDetailPhotoSide(recordId, side) {
+  const blob = await fetchPhotoFromBackup(recordId, side).catch((err) => {
+    console.warn(`[photo-backup] fetch ${side} failed`, err);
+    return null;
+  });
+  if (!blob) return;
+
+  const blobField = side === "front" ? "photoFrontBlob" : "photoBackBlob";
+  const uploadedField = side === "front" ? "photoFrontUploaded" : "photoBackUploaded";
+  await patchRecordAsIs(recordId, { [blobField]: blob, [uploadedField]: true });
+  state.allRecords = await getAllRecords();
+
+  const current = state.allRecords[state.selectedIndex];
+  if (!current || current.id !== recordId) return; // 取得完了までの間に別の記録へ移動していたら表示は更新しない
+
+  const el = document.getElementById(side === "front" ? "detail-photo-front" : "detail-photo-back");
+  el.innerHTML = `<img src="${trackUrl(URL.createObjectURL(blob))}" alt="${side === "front" ? "表ラベル" : "裏ラベル"}">`;
 }
 
 function renderDetail() {
@@ -753,6 +849,9 @@ document.getElementById("detail-edit").addEventListener("submit", async (e) => {
     photoFrontBlob: state.pendingEditFrontBlob || record.photoFrontBlob,
     photoBackBlob: state.pendingEditBackBlob || record.photoBackBlob,
     photoThumbnail,
+    // 写真を選び直した側だけ、バックアップ済みフラグをリセットして再アップロード対象にする
+    photoFrontUploaded: state.pendingEditFrontBlob ? false : record.photoFrontUploaded,
+    photoBackUploaded: state.pendingEditBackBlob ? false : record.photoBackUploaded,
     brand: document.getElementById("e-brand").value.trim(),
     brewery: document.getElementById("e-brewery").value.trim(),
     prefecture: document.getElementById("e-prefecture").value.trim(),
@@ -764,6 +863,7 @@ document.getElementById("detail-edit").addEventListener("submit", async (e) => {
     memo: document.getElementById("e-memo").value.trim(),
   };
   await putRecord(updated);
+  backupRecordPhotos(updated);
   state.pendingEditFrontBlob = null;
   state.pendingEditBackBlob = null;
   state.allRecords = await getAllRecords();
@@ -779,6 +879,7 @@ document.getElementById("delete-cancel").addEventListener("click", () => {
 document.getElementById("delete-confirm-btn").addEventListener("click", async () => {
   const record = state.allRecords[state.selectedIndex];
   await deleteRecord(record.id);
+  deletePhotosFromBackup(record.id).catch((err) => console.warn("[photo-backup] delete failed", err));
   showScreen(state.returnScreen || "collection");
 });
 
@@ -982,7 +1083,8 @@ document.getElementById("register-review").addEventListener("submit", async (e) 
   };
   if (!record.brand || !record.date) return;
 
-  await addRecord(record);
+  const newId = await addRecord(record);
+  backupRecordPhotos({ ...record, id: newId });
 
   resetRegisterPhotos();
   setRegisterStep("photos");
@@ -1173,6 +1275,14 @@ async function runSyncOnce() {
   console.log("[sync] uploading payload with", payload.records.length, "records");
   const uploadResult = await driveUploadFile(token, fileId, payload);
   console.log("[sync] upload result:", uploadResult);
+
+  // 保存直後のアップロードが何らかの理由(オフライン等)で失敗していた写真を、同期のタイミングで送り直す
+  const pendingPhotoUploads = mergedLocalRecords.filter(
+    (r) => (r.photoFrontBlob && !r.photoFrontUploaded) || (r.photoBackBlob && !r.photoBackUploaded)
+  );
+  for (const r of pendingPhotoUploads) {
+    await backupRecordPhotos(r);
+  }
 
   state.allRecords = await getAllRecords();
   if (state.screen === "collection") renderGallery();
