@@ -13,6 +13,42 @@ const OCR_APP_SECRET = "sakelog2026xyz";
 
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
 
+// また飲みたい度(1〜3の星。0/未設定は「まだ評価していない」であって低評価ではないので、バッジ自体を出さない)
+const WANTAGAIN_LABEL = { 1: "意外といける", 2: "覚えておきたい", 3: "絶対また飲みたい" };
+const WANTAGAIN_STAR_PATH = '<path d="M12 2.5l2.9 6.4 6.9.7-5.2 4.8 1.5 6.9-6.1-3.6-6.1 3.6 1.5-6.9-5.2-4.8 6.9-.7z"/>';
+
+function wantAgainStarSvg() {
+  return `<svg viewBox="0 0 24 24" class="wa-star">${WANTAGAIN_STAR_PATH}</svg>`;
+}
+
+function wantAgainBadgeHtml(level, { withLabel = false } = {}) {
+  if (!level) return "";
+  const stars = Array.from({ length: level }).map(wantAgainStarSvg).join("");
+  const label = withLabel ? WANTAGAIN_LABEL[level] : "";
+  return `<span class="wa-badge"><span class="wa-stars">${stars}</span>${label}</span>`;
+}
+
+// また飲みたい度の星ピッカー(登録・編集フォーム共通)。同じ星をもう一度押すと未設定に戻せる
+function renderWantAgainPicker(containerId, initialLevel) {
+  const el = document.getElementById(containerId);
+  let level = initialLevel || 0;
+
+  function render() {
+    el.innerHTML = [1, 2, 3]
+      .map((n) => `<button type="button" class="wa-star-btn ${n <= level ? "filled" : ""}" data-lv="${n}">${wantAgainStarSvg()}</button>`)
+      .join("");
+    el.querySelectorAll(".wa-star-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const lv = Number(btn.dataset.lv);
+        level = lv === level ? 0 : lv;
+        render();
+      });
+    });
+  }
+  render();
+  return { get: () => level };
+}
+
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -392,6 +428,10 @@ const state = {
   searchQuery: "",
 };
 
+// また飲みたい度ピッカーの現在値を読むためのハンドル(登録フォーム・詳細編集フォームそれぞれ)
+let registerWantAgainPicker = null;
+let editWantAgainPicker = null;
+
 function emptyDraft(date) {
   return {
     brand: "",
@@ -403,6 +443,7 @@ function emptyDraft(date) {
     date: date || new Date().toISOString().slice(0, 10),
     place: "",
     memo: "",
+    wantAgain: 0,
   };
 }
 
@@ -525,6 +566,9 @@ async function renderGallery() {
       photo.appendChild(img);
     } else {
       photo.innerHTML = ICON_IMAGE;
+    }
+    if (record.wantAgain) {
+      photo.insertAdjacentHTML("beforeend", wantAgainBadgeHtml(record.wantAgain));
     }
     card.appendChild(photo);
 
@@ -686,6 +730,7 @@ function renderDetail() {
   document.getElementById("detail-brand").textContent = record.brand;
   document.getElementById("detail-brewery").textContent = record.brewery;
   document.getElementById("detail-memo").textContent = record.memo || "";
+  document.getElementById("detail-wantagain").innerHTML = wantAgainBadgeHtml(record.wantAgain, { withLabel: true });
 
   const grid = document.getElementById("detail-grid");
   grid.innerHTML = `
@@ -734,6 +779,7 @@ function setDetailEditing(editing) {
     document.getElementById("e-date").value = record.date;
     document.getElementById("e-place").value = record.place;
     document.getElementById("e-memo").value = record.memo;
+    editWantAgainPicker = renderWantAgainPicker("e-wantagain-picker", record.wantAgain || 0);
   } else {
     // 保存せずに編集をやめた場合、選び直した写真の未保存プレビューを元に戻す
     state.pendingEditFrontBlob = null;
@@ -804,6 +850,7 @@ document.getElementById("detail-edit").addEventListener("submit", async (e) => {
     date: document.getElementById("e-date").value,
     place: document.getElementById("e-place").value.trim(),
     memo: document.getElementById("e-memo").value.trim(),
+    wantAgain: editWantAgainPicker ? editWantAgainPicker.get() : (record.wantAgain || 0),
   };
   await putRecord(updated);
   backupRecordPhotos(updated);
@@ -954,6 +1001,7 @@ function fillReviewForm(draft, ocrFields) {
   document.getElementById("f-date").value = draft.date;
   document.getElementById("f-place").value = draft.place;
   document.getElementById("f-memo").value = draft.memo;
+  registerWantAgainPicker = renderWantAgainPicker("f-wantagain-picker", draft.wantAgain || 0);
 
   document.getElementById("tag-brand").hidden = !ocrFields.brand;
   document.getElementById("tag-brewery").hidden = !ocrFields.brewery;
@@ -1023,6 +1071,7 @@ document.getElementById("register-review").addEventListener("submit", async (e) 
     date: document.getElementById("f-date").value,
     place: document.getElementById("f-place").value.trim(),
     memo: document.getElementById("f-memo").value.trim(),
+    wantAgain: registerWantAgainPicker ? registerWantAgainPicker.get() : 0,
   };
   if (!record.brand || !record.date) return;
 
@@ -1138,6 +1187,7 @@ async function recordsToSyncPayload(records) {
       date: r.date,
       place: r.place,
       memo: r.memo,
+      wantAgain: r.wantAgain || 0,
       updatedAt: r.updatedAt || 0,
       thumbnail: thumbSource ? await blobToBase64(thumbSource) : null,
     });
@@ -1166,6 +1216,7 @@ async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
         date: remote.date,
         place: remote.place,
         memo: remote.memo,
+        wantAgain: remote.wantAgain || 0,
         updatedAt: remote.updatedAt,
         photoFrontBlob: null,
         photoBackBlob: null,
@@ -1188,6 +1239,7 @@ async function mergeRemoteIntoLocal(localRecords, remoteRecords) {
         date: remote.date,
         place: remote.place,
         memo: remote.memo,
+        wantAgain: remote.wantAgain || 0,
         updatedAt: remote.updatedAt,
         photoThumbnail: local.photoFrontBlob ? local.photoThumbnail : photoThumbnail,
       });

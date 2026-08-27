@@ -8,7 +8,7 @@
 <link rel="icon" href="favicon-32.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#b5482a">
+<meta name="theme-color" content="#e2632f">
 </head>
 <body>
   <div class="app">
@@ -107,6 +107,9 @@
           <label class="field">飲んだ場所
             <input type="text" id="f-place" placeholder="例: 自宅 / 居酒屋◯◯" autocomplete="off">
           </label>
+          <div class="field">また飲みたい度
+            <div class="wa-picker" id="f-wantagain-picker"></div>
+          </div>
           <label class="field">自分用メモ・感想
             <textarea id="f-memo" rows="3" placeholder="香りや味の感想、また飲みたいかなど"></textarea>
           </label>
@@ -152,6 +155,7 @@
         <div id="detail-view">
           <h2 class="detail-brand" id="detail-brand"></h2>
           <p class="detail-brewery" id="detail-brewery"></p>
+          <div id="detail-wantagain"></div>
           <hr class="hr">
           <div class="detail-grid" id="detail-grid"></div>
           <hr class="hr">
@@ -173,6 +177,9 @@
           <label class="field">日本酒度<input type="text" id="e-nihonshudo" autocomplete="off"></label>
           <label class="field">飲んだ日付<input type="date" id="e-date" required></label>
           <label class="field">飲んだ場所<input type="text" id="e-place" autocomplete="off"></label>
+          <div class="field">また飲みたい度
+            <div class="wa-picker" id="e-wantagain-picker"></div>
+          </div>
           <label class="field">自分用メモ・感想<textarea id="e-memo" rows="3"></textarea></label>
           <button type="submit" class="btn-primary">変更を保存</button>
         </form>

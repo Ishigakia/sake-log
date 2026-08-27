@@ -1,17 +1,17 @@
 :root {
   color-scheme: light dark;
-  --paper: #f2f2f0;
+  --paper: #fafaf9;
   --paper-raised: #ffffff;
-  --ink: #1a1a19;
-  --ink-soft: #6b6b68;
-  --accent: #b5482a;
-  --accent-ink: #8a3520;
-  --accent-tint: #f0e2da;
-  --on-accent: #fdf6f2;
-  --line: #dedcd8;
-  --input-fill: #e9e8e5;
-  --shadow: rgba(20, 20, 18, 0.14);
-  --accent-shadow: rgba(181, 72, 42, 0.4);
+  --ink: #201f1d;
+  --ink-soft: #726f6a;
+  --accent: #e2632f;
+  --accent-ink: #b8481f;
+  --accent-tint: #fbe4d3;
+  --on-accent: #ffffff;
+  --line: #eae9e6;
+  --input-fill: #f0efec;
+  --shadow: rgba(20, 20, 18, 0.1);
+  --accent-shadow: rgba(226, 99, 47, 0.35);
   --font-body: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
 }
 
@@ -172,6 +172,7 @@ body {
   justify-content: center;
   color: var(--ink-soft);
   overflow: hidden;
+  position: relative;
 }
 
 .shot-photo img { object-position: center; }
@@ -340,8 +341,8 @@ body {
   font-weight: 700;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--accent-tint);
-  color: var(--accent-ink);
+  background: var(--input-fill);
+  color: var(--ink-soft);
   margin-left: 4px;
   vertical-align: middle;
 }
@@ -353,13 +354,10 @@ body {
 }
 
 .tag-accent {
-  display: inline-block;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: var(--accent-tint);
-  color: var(--accent-ink);
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
   margin-bottom: 12px;
 }
 
@@ -379,8 +377,8 @@ body {
 
 .hint {
   font-size: 0.8rem;
-  color: var(--accent-ink);
-  background: var(--accent-tint);
+  color: var(--ink-soft);
+  background: var(--input-fill);
   border-radius: 10px;
   padding: 8px 12px;
   margin: -6px 0 14px;
@@ -565,13 +563,15 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  font-size: 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 .detail-grid .full { grid-column: 1 / -1; }
 
 .detail-grid .label {
   font-size: 0.7rem;
+  font-weight: 500;
   color: var(--ink-soft);
   display: block;
   margin-bottom: 2px;
@@ -635,3 +635,45 @@ body {
 }
 
 .tab-register .tab-add svg { width: 16px; height: 16px; }
+
+/* また飲みたい度バッジ(一覧カード・詳細画面共通) */
+.wa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--accent-tint);
+  border-radius: 999px;
+  padding: 3px 8px 3px 6px;
+  line-height: 1.6;
+}
+
+.wa-stars { display: inline-flex; gap: 1px; }
+.wa-star { width: 11px; height: 11px; fill: currentColor; }
+
+/* 一覧カードでは写真の上に重ねて表示する(文字とは重ならないよう写真側に乗せる) */
+.shot-photo .wa-badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  background: color-mix(in srgb, var(--paper) 78%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+#detail-wantagain:empty { display: none; }
+#detail-wantagain { margin: 6px 0 2px; }
+
+/* また飲みたい度ピッカー(登録・編集フォーム、1〜3の星をタップして選ぶ) */
+.wa-picker { display: flex; gap: 4px; margin-top: 4px; }
+.wa-star-btn {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--line);
+  line-height: 0;
+}
+.wa-star-btn svg { width: 30px; height: 30px; fill: currentColor; }
+.wa-star-btn.filled { color: var(--accent); }
