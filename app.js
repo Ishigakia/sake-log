@@ -36,9 +36,13 @@ function renderWantAgainPicker(containerId, initialLevel) {
   let level = initialLevel || 0;
 
   function render() {
-    el.innerHTML = [1, 2, 3]
+    const starsHtml = [1, 2, 3]
       .map((n) => `<button type="button" class="wa-star-btn ${n <= level ? "filled" : ""}" data-lv="${n}">${wantAgainStarSvg()}</button>`)
       .join("");
+    el.innerHTML = `
+      <div class="wa-star-row">${starsHtml}</div>
+      <span class="wa-picker-label">${level ? WANTAGAIN_LABEL[level] : ""}</span>
+    `;
     el.querySelectorAll(".wa-star-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const lv = Number(btn.dataset.lv);
@@ -534,6 +538,17 @@ document.querySelectorAll(".tab-item").forEach((btn) => {
     if (target === "register" && state.screen !== "register" && state.screen !== "detail") {
       state.returnScreen = state.screen;
     }
+    if (btn.id === "tab-home") {
+      // ホームタブは常に「日付順・グリッド表示」に戻す
+      state.collectionSort = "date";
+      state.collectionView = "grid";
+      document.getElementById("sort-label").textContent = "日付順";
+      document.getElementById("view-grid-btn").classList.add("active");
+      document.getElementById("view-cal-btn").classList.remove("active");
+      document.getElementById("gallery").hidden = false;
+      document.getElementById("sort-toggle").hidden = false;
+      document.getElementById("calendar-view").hidden = true;
+    }
     showScreen(target);
   });
 });
@@ -674,7 +689,7 @@ async function renderCalendar() {
   revokeLiveUrls();
   let html = "";
   for (let i = 0; i < firstWeekdayMon0; i++) {
-    html += `<div class="cal-cell empty"><span class="day-num"></span></div>`;
+    html += `<div class="cal-cell empty"><div class="cal-thumb"></div></div>`;
   }
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthPrefix}-${pad2(d)}`;
@@ -692,11 +707,11 @@ async function renderCalendar() {
         : `<span class="cal-placeholder">${ICON_IMAGE}</span>`;
       html += `<div class="${cellClasses.join(" ")}" data-date="${dateStr}">
         <span class="day-num">${d}</span>
-        ${photoHtml}
+        <div class="cal-thumb">${photoHtml}</div>
         ${dayRecords.length > 1 ? `<span class="count-badge">+${dayRecords.length - 1}</span>` : ""}
       </div>`;
     } else {
-      html += `<div class="${cellClasses.join(" ")}" data-date="${dateStr}"><span class="day-num">${d}</span></div>`;
+      html += `<div class="${cellClasses.join(" ")}" data-date="${dateStr}"><span class="day-num">${d}</span><div class="cal-thumb"></div></div>`;
     }
   }
   const calGrid = document.getElementById("cal-grid");

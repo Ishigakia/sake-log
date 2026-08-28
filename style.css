@@ -204,6 +204,7 @@ body {
 
 /* 店名順表示(店ごとにグループ化) */
 .gallery-shop-list { display: flex; flex-direction: column; }
+.gallery-shop-list[hidden] { display: none; }
 .shop-group + .shop-group { margin-top: 26px; }
 .shop-group-head {
   display: flex;
@@ -740,7 +741,9 @@ body {
 #detail-wantagain { margin: 6px 0 2px; }
 
 /* また飲みたい度ピッカー(登録・編集フォーム、1〜3の星をタップして選ぶ) */
-.wa-picker { display: flex; gap: 4px; margin-top: 4px; }
+.wa-picker { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.wa-star-row { display: flex; gap: 4px; }
+.wa-picker-label { font-size: 0.85rem; font-weight: 700; color: var(--accent-ink); }
 .wa-star-btn {
   background: transparent;
   border: none;
@@ -781,14 +784,24 @@ body {
 
 .cal-cell {
   flex: 0 0 calc((100% - 24px) / 7);
-  border-radius: 8px;
   position: relative;
-  overflow: hidden;
-  background: var(--paper-raised);
   cursor: pointer;
 }
-.cal-cell::before { content: ""; display: block; padding-top: 100%; }
-.cal-cell.empty { background: transparent; cursor: default; }
+.cal-cell.empty { cursor: default; }
+
+/* サムネイルの正方形はここで確定させる(.shot-photoと同じ考え方: 見た目の四角は専用の子要素が担当し、
+   .cal-cell自体はflexアイテムとして幅だけ決まればよく、高さの取り合いに影響されないようにする) */
+.cal-thumb {
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--paper-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-cell.empty .cal-thumb { background: transparent; }
+
 .cal-cell .day-num {
   position: absolute;
   top: 3px;
@@ -804,9 +817,9 @@ body {
   padding: 0 4px;
   border-radius: 999px;
 }
-.cal-cell img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-.cal-cell .cal-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); opacity: 0.5; }
-.cal-cell .cal-placeholder svg { width: 18px; height: 18px; }
+.cal-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cal-thumb .cal-placeholder { color: var(--ink-soft); opacity: 0.5; display: flex; }
+.cal-thumb .cal-placeholder svg { width: 18px; height: 18px; }
 .cal-cell .count-badge {
   position: absolute;
   right: 3px;
