@@ -27,7 +27,32 @@
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
           <input type="search" id="collection-search" placeholder="銘柄名で検索">
         </div>
+        <div class="toolbar-row">
+          <button class="sort-select" id="sort-toggle" type="button">
+            <span id="sort-label">日付順</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
+          </button>
+          <div class="view-toggle">
+            <button type="button" id="view-grid-btn" class="active" aria-label="グリッド表示">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+            </button>
+            <button type="button" id="view-cal-btn" aria-label="カレンダー表示">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            </button>
+          </div>
+        </div>
         <div class="gallery" id="gallery"></div>
+
+        <div id="calendar-view" hidden>
+          <div class="cal-header">
+            <button type="button" id="cal-prev" aria-label="前の月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+            <span class="month-label" id="cal-month-label"></span>
+            <button type="button" id="cal-next" aria-label="次の月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+          <div class="cal-weekdays"><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span><span>日</span></div>
+          <div class="cal-grid" id="cal-grid"></div>
+          <div class="cal-daylist" id="cal-daylist"></div>
+        </div>
       </section>
 
       <!-- 登録 -->
@@ -156,8 +181,9 @@
           <h2 class="detail-brand" id="detail-brand"></h2>
           <p class="detail-brewery" id="detail-brewery"></p>
           <div id="detail-wantagain"></div>
+          <div class="spec-chips" id="detail-spec-chips"></div>
           <hr class="hr">
-          <div class="detail-grid" id="detail-grid"></div>
+          <div id="detail-meta"></div>
           <hr class="hr">
           <div class="section-label">自分用メモ・感想</div>
           <p class="detail-memo" id="detail-memo"></p>

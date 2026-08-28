@@ -12,6 +12,8 @@ const OCR_WORKER_URL = "https://flat-sky-7e67.mfgyoh.workers.dev";
 const OCR_APP_SECRET = "sakelog2026xyz";
 
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
+const ICON_CALENDAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const ICON_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
 
 // また飲みたい度(1〜3の星。0/未設定は「まだ評価していない」であって低評価ではないので、バッジ自体を出さない)
 const WANTAGAIN_LABEL = { 1: "意外といける", 2: "覚えておきたい", 3: "絶対また飲みたい" };
@@ -425,6 +427,10 @@ const state = {
   pendingEditFrontBlob: null,
   pendingEditBackBlob: null,
   collectionQuery: "",
+  collectionSort: "date", // "date" | "shop"
+  collectionView: "grid", // "grid" | "calendar"
+  calendarMonth: new Date(),
+  calendarSelectedDate: null,
   searchQuery: "",
 };
 
@@ -498,7 +504,10 @@ function showScreen(name, { fromScreen } = {}) {
     title.textContent = SCREEN_TITLES[name];
   }
 
-  if (name === "collection") renderGallery();
+  if (name === "collection") {
+    if (state.collectionView === "calendar") renderCalendar();
+    else renderGallery();
+  }
   if (name === "search") renderSearchResults();
   if (name === "detail") renderDetail();
 }
@@ -530,9 +539,48 @@ document.querySelectorAll(".tab-item").forEach((btn) => {
 });
 
 // --- 一覧画面 ---
-async function renderGallery() {
+async function refreshAllRecords() {
   state.allRecords = await getAllRecords();
   document.getElementById("header-title").textContent = `記録一覧（${state.allRecords.length}件）`;
+  return state.allRecords;
+}
+
+function buildShotCard(record, brandCounts) {
+  const card = document.createElement("div");
+  card.className = "shot-card";
+
+  const photo = document.createElement("div");
+  photo.className = "shot-photo";
+  const shotPhotoSrc = record.photoFrontBlob || record.photoThumbnail;
+  if (shotPhotoSrc) {
+    const img = document.createElement("img");
+    img.src = trackUrl(URL.createObjectURL(shotPhotoSrc));
+    photo.appendChild(img);
+  } else {
+    photo.innerHTML = ICON_IMAGE;
+  }
+  if (record.wantAgain) {
+    photo.insertAdjacentHTML("beforeend", wantAgainBadgeHtml(record.wantAgain));
+  }
+  card.appendChild(photo);
+
+  const meta = document.createElement("div");
+  meta.className = "shot-meta";
+  const placePart = record.place ? `・${escapeHtml(record.place)}` : "";
+  meta.innerHTML = `
+    <div class="shot-name">${escapeHtml(record.brand)}</div>
+    <div class="shot-sub">${escapeHtml(record.date)}${placePart}</div>
+    ${brandCounts[record.brand] > 1 ? '<div class="shot-again">前にも記録あり</div>' : ""}
+    ${!record.prefecture ? '<div class="shot-missing">都道府県未入力</div>' : ""}
+  `;
+  card.appendChild(meta);
+
+  card.addEventListener("click", () => openDetailByRecord(record, "collection"));
+  return card;
+}
+
+async function renderGallery() {
+  await refreshAllRecords();
   const gallery = document.getElementById("gallery");
   const query = toHiragana(state.collectionQuery.trim());
 
@@ -549,48 +597,198 @@ async function renderGallery() {
   gallery.innerHTML = "";
 
   if (records.length === 0) {
+    gallery.className = "gallery";
     gallery.innerHTML = '<p class="empty">記録がありません</p>';
     return;
   }
 
-  for (const record of records) {
-    const card = document.createElement("div");
-    card.className = "shot-card";
+  if (state.collectionSort === "shop") {
+    gallery.className = "gallery-shop-list";
+    const groups = {};
+    records.forEach((r) => {
+      const shop = r.place || "場所未入力";
+      (groups[shop] ||= []).push(r);
+    });
+    // 記録件数が多い店を上に(同数の場合は元の並び=新しい記録がある店が先)
+    const shopNames = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
 
-    const photo = document.createElement("div");
-    photo.className = "shot-photo";
-    const shotPhotoSrc = record.photoFrontBlob || record.photoThumbnail;
-    if (shotPhotoSrc) {
-      const img = document.createElement("img");
-      img.src = trackUrl(URL.createObjectURL(shotPhotoSrc));
-      photo.appendChild(img);
-    } else {
-      photo.innerHTML = ICON_IMAGE;
+    for (const shop of shopNames) {
+      const groupEl = document.createElement("div");
+      groupEl.className = "shop-group";
+      groupEl.innerHTML = `
+        <div class="shop-group-head">
+          <span class="shop-group-name">${escapeHtml(shop)}</span>
+          <span class="shop-group-count">${groups[shop].length}件</span>
+        </div>
+        <div class="gallery"></div>
+      `;
+      const innerGallery = groupEl.querySelector(".gallery");
+      groups[shop].forEach((record) => innerGallery.appendChild(buildShotCard(record, brandCounts)));
+      gallery.appendChild(groupEl);
     }
-    if (record.wantAgain) {
-      photo.insertAdjacentHTML("beforeend", wantAgainBadgeHtml(record.wantAgain));
-    }
-    card.appendChild(photo);
-
-    const meta = document.createElement("div");
-    meta.className = "shot-meta";
-    const placePart = record.place ? `・${escapeHtml(record.place)}` : "";
-    meta.innerHTML = `
-      <div class="shot-name">${escapeHtml(record.brand)}</div>
-      <div class="shot-sub">${escapeHtml(record.date)}${placePart}</div>
-      ${brandCounts[record.brand] > 1 ? '<div class="shot-again">前にも記録あり</div>' : ""}
-      ${!record.prefecture ? '<div class="shot-missing">都道府県未入力</div>' : ""}
-    `;
-    card.appendChild(meta);
-
-    card.addEventListener("click", () => openDetailByRecord(record, "collection"));
-    gallery.appendChild(card);
+    return;
   }
+
+  gallery.className = "gallery";
+  records.forEach((record) => gallery.appendChild(buildShotCard(record, brandCounts)));
 }
 
 document.getElementById("collection-search").addEventListener("input", (e) => {
   state.collectionQuery = e.target.value;
   renderGallery();
+});
+
+document.getElementById("sort-toggle").addEventListener("click", () => {
+  state.collectionSort = state.collectionSort === "date" ? "shop" : "date";
+  document.getElementById("sort-label").textContent = state.collectionSort === "date" ? "日付順" : "店名順";
+  renderGallery();
+});
+
+// --- カレンダー表示 ---
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+async function renderCalendar() {
+  await refreshAllRecords();
+
+  const monthDate = state.calendarMonth;
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth(); // 0始まり
+  document.getElementById("cal-month-label").textContent = `${year}年${month + 1}月`;
+
+  const monthPrefix = `${year}-${pad2(month + 1)}`;
+  const byDay = {};
+  state.allRecords.forEach((r) => {
+    if (r.date && r.date.startsWith(monthPrefix)) {
+      const day = Number(r.date.slice(8, 10));
+      (byDay[day] ||= []).push(r);
+    }
+  });
+
+  const firstWeekdaySun0 = new Date(year, month, 1).getDay(); // 0=日..6=土
+  const firstWeekdayMon0 = (firstWeekdaySun0 + 6) % 7; // 0=月..6=日に変換
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  revokeLiveUrls();
+  let html = "";
+  for (let i = 0; i < firstWeekdayMon0; i++) {
+    html += `<div class="cal-cell empty"><span class="day-num"></span></div>`;
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthPrefix}-${pad2(d)}`;
+    const dayRecords = byDay[d];
+    const cellClasses = ["cal-cell"];
+    if (dateStr === todayStr) cellClasses.push("today");
+    if (dateStr === state.calendarSelectedDate) cellClasses.push("selected");
+
+    if (dayRecords) {
+      cellClasses.push("has-record");
+      const rep = dayRecords[0];
+      const thumbSrc = rep.photoFrontBlob || rep.photoThumbnail;
+      const photoHtml = thumbSrc
+        ? `<img src="${trackUrl(URL.createObjectURL(thumbSrc))}">`
+        : `<span class="cal-placeholder">${ICON_IMAGE}</span>`;
+      html += `<div class="${cellClasses.join(" ")}" data-date="${dateStr}">
+        <span class="day-num">${d}</span>
+        ${photoHtml}
+        ${dayRecords.length > 1 ? `<span class="count-badge">+${dayRecords.length - 1}</span>` : ""}
+      </div>`;
+    } else {
+      html += `<div class="${cellClasses.join(" ")}" data-date="${dateStr}"><span class="day-num">${d}</span></div>`;
+    }
+  }
+  const calGrid = document.getElementById("cal-grid");
+  calGrid.innerHTML = html;
+  calGrid.querySelectorAll(".cal-cell:not(.empty)").forEach((cell) => {
+    cell.addEventListener("click", () => {
+      state.calendarSelectedDate = cell.dataset.date;
+      renderCalendar();
+    });
+  });
+
+  renderCalendarDayList();
+}
+
+function renderCalendarDayList() {
+  const container = document.getElementById("cal-daylist");
+  if (!state.calendarSelectedDate) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const dateRecords = state.allRecords.filter((r) => r.date === state.calendarSelectedDate);
+  const [, m, d] = state.calendarSelectedDate.split("-").map(Number);
+  const label = `${m}月${d}日の記録`;
+
+  if (dateRecords.length === 0) {
+    container.innerHTML = `<div class="cal-daylist-label">${label}</div><p class="empty">記録がありません</p>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="cal-daylist-label">${label}</div>`;
+  dateRecords.forEach((record) => {
+    const row = document.createElement("div");
+    row.className = "day-row";
+
+    const photoEl = document.createElement("div");
+    photoEl.className = "day-row-photo";
+    const photoSrc = record.photoFrontBlob || record.photoThumbnail;
+    if (photoSrc) {
+      const img = document.createElement("img");
+      img.src = trackUrl(URL.createObjectURL(photoSrc));
+      photoEl.appendChild(img);
+    } else {
+      photoEl.innerHTML = ICON_IMAGE;
+    }
+    row.appendChild(photoEl);
+
+    const body = document.createElement("div");
+    body.className = "day-row-body";
+    body.innerHTML = `
+      <div class="day-row-name">${escapeHtml(record.brand)}</div>
+      <div class="day-row-sub">${escapeHtml(record.place || "")}</div>
+    `;
+    row.appendChild(body);
+
+    if (record.wantAgain) {
+      row.insertAdjacentHTML("beforeend", wantAgainBadgeHtml(record.wantAgain));
+    }
+
+    row.addEventListener("click", () => openDetailByRecord(record, "collection"));
+    container.appendChild(row);
+  });
+}
+
+document.getElementById("cal-prev").addEventListener("click", () => {
+  state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1);
+  state.calendarSelectedDate = null;
+  renderCalendar();
+});
+document.getElementById("cal-next").addEventListener("click", () => {
+  state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1);
+  state.calendarSelectedDate = null;
+  renderCalendar();
+});
+
+document.getElementById("view-grid-btn").addEventListener("click", () => {
+  state.collectionView = "grid";
+  document.getElementById("view-grid-btn").classList.add("active");
+  document.getElementById("view-cal-btn").classList.remove("active");
+  document.getElementById("gallery").hidden = false;
+  document.getElementById("sort-toggle").hidden = false;
+  document.getElementById("calendar-view").hidden = true;
+  renderGallery();
+});
+document.getElementById("view-cal-btn").addEventListener("click", () => {
+  state.collectionView = "calendar";
+  document.getElementById("view-cal-btn").classList.add("active");
+  document.getElementById("view-grid-btn").classList.remove("active");
+  document.getElementById("gallery").hidden = true;
+  document.getElementById("sort-toggle").hidden = true;
+  document.getElementById("calendar-view").hidden = false;
+  renderCalendar();
 });
 
 // --- 検索画面 ---
@@ -728,19 +926,21 @@ function renderDetail() {
   document.getElementById("detail-next").style.opacity = state.selectedIndex >= records.length - 1 ? 0.35 : 1;
 
   document.getElementById("detail-brand").textContent = record.brand;
-  document.getElementById("detail-brewery").textContent = record.brewery;
+  document.getElementById("detail-brewery").textContent = record.brewery + (record.prefecture ? `(${record.prefecture})` : "");
   document.getElementById("detail-memo").textContent = record.memo || "";
   document.getElementById("detail-wantagain").innerHTML = wantAgainBadgeHtml(record.wantAgain, { withLabel: true });
 
-  const grid = document.getElementById("detail-grid");
-  grid.innerHTML = `
-    <div><span class="label">都道府県</span>${escapeHtml(record.prefecture) || "-"}</div>
-    <div><span class="label">精米歩合</span>${escapeHtml(record.seimai) || "-"}</div>
-    <div><span class="label">酒米</span>${escapeHtml(record.sakemai) || "-"}</div>
-    <div><span class="label">日本酒度</span>${escapeHtml(record.nihonshudo) || "-"}</div>
-    <div><span class="label">飲んだ日付</span>${escapeHtml(record.date) || "-"}</div>
-    <div class="full"><span class="label">飲んだ場所</span>${escapeHtml(record.place) || "-"}</div>
-  `;
+  const chips = [];
+  if (record.seimai) chips.push(["精米歩合", record.seimai]);
+  if (record.sakemai) chips.push(["酒米", record.sakemai]);
+  if (record.nihonshudo) chips.push(["日本酒度", record.nihonshudo]);
+  document.getElementById("detail-spec-chips").innerHTML = chips
+    .map(([label, value]) => `<span class="spec-chip"><span class="spec-chip-label">${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></span>`)
+    .join("");
+
+  const metaLines = [`<div class="meta-line">${ICON_CALENDAR}${escapeHtml(record.date)}</div>`];
+  if (record.place) metaLines.push(`<div class="meta-line">${ICON_PIN}${escapeHtml(record.place)}</div>`);
+  document.getElementById("detail-meta").innerHTML = metaLines.join("");
 
   setDetailEditing(false);
 }

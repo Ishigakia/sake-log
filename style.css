@@ -146,12 +146,75 @@ body {
 
 .search-field input::placeholder { color: var(--ink-soft); }
 
+/* 並び替え */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  margin: 0 0 14px;
+}
+
+.sort-select {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--input-fill);
+  border: none;
+  border-radius: 999px;
+  padding: 6px 10px 6px 12px;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.sort-select svg { width: 14px; height: 14px; opacity: 0.7; }
+.sort-select[hidden] { display: none; }
+
+/* 表示切り替え(グリッド/カレンダー) */
+.view-toggle {
+  margin-left: auto;
+  display: flex;
+  background: var(--input-fill);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.view-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  width: 30px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.view-toggle button svg { width: 15px; height: 15px; }
+.view-toggle button.active { background: var(--paper-raised); color: var(--accent-ink); box-shadow: 0 1px 3px var(--shadow); }
+
 /* 一覧グリッド */
 .gallery {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+.gallery[hidden] { display: none; }
+
+/* 店名順表示(店ごとにグループ化) */
+.gallery-shop-list { display: flex; flex-direction: column; }
+.shop-group + .shop-group { margin-top: 26px; }
+.shop-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.shop-group-name { font-size: 0.95rem; font-weight: 700; }
+.shop-group-count { font-size: 0.72rem; color: var(--ink-soft); }
 
 .shot-card {
   border-radius: 10px;
@@ -559,23 +622,34 @@ body {
 .detail-brand { font-size: 1.1rem; font-weight: 700; margin: 16px 0 2px; }
 .detail-brewery { font-size: 0.85rem; color: var(--ink-soft); margin: 0; }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  font-size: 0.92rem;
-  font-weight: 700;
+/* スペックのチップ表示 */
+.spec-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0;
 }
-
-.detail-grid .full { grid-column: 1 / -1; }
-
-.detail-grid .label {
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--ink-soft);
-  display: block;
-  margin-bottom: 2px;
+.spec-chips:empty { display: none; }
+.spec-chip {
+  font-size: 0.8rem;
+  background: var(--input-fill);
+  border-radius: 999px;
+  padding: 5px 12px;
+  white-space: nowrap;
 }
+.spec-chip b { font-weight: 700; }
+.spec-chip .spec-chip-label { color: var(--ink-soft); margin-right: 4px; }
+
+/* 日付・場所(アイコン付きの1行ずつ) */
+.meta-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--ink);
+  margin: 8px 0;
+}
+.meta-line svg { width: 16px; height: 16px; color: var(--ink-soft); flex: none; }
 
 .detail-memo {
   font-size: 0.88rem;
@@ -677,3 +751,106 @@ body {
 }
 .wa-star-btn svg { width: 30px; height: 30px; fill: currentColor; }
 .wa-star-btn.filled { color: var(--accent); }
+
+/* カレンダー表示 */
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.cal-header .month-label { font-size: 0.98rem; font-weight: 700; min-width: 7.5em; text-align: center; }
+.cal-header button { background: transparent; border: none; color: var(--ink); padding: 6px; cursor: pointer; }
+.cal-header button svg { width: 18px; height: 18px; }
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.cal-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cal-cell {
+  flex: 0 0 calc((100% - 24px) / 7);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  background: var(--paper-raised);
+  cursor: pointer;
+}
+.cal-cell::before { content: ""; display: block; padding-top: 100%; }
+.cal-cell.empty { background: transparent; cursor: default; }
+.cal-cell .day-num {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  font-size: 0.62rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+.cal-cell.has-record .day-num {
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  padding: 0 4px;
+  border-radius: 999px;
+}
+.cal-cell img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.cal-cell .cal-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); opacity: 0.5; }
+.cal-cell .cal-placeholder svg { width: 18px; height: 18px; }
+.cal-cell .count-badge {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  z-index: 2;
+}
+.cal-cell.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cal-cell.selected { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+
+.cal-daylist { margin-top: 22px; }
+.cal-daylist-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+.day-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.day-row:last-child { border-bottom: none; }
+.day-row-photo {
+  width: 44px; height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+}
+.day-row-photo img { width: 100%; height: 100%; object-fit: cover; }
+.day-row-photo svg { width: 18px; height: 18px; opacity: 0.6; }
+.day-row-body { flex: 1; min-width: 0; }
+.day-row-name { font-size: 0.85rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-row-sub { font-size: 0.72rem; color: var(--ink-soft); margin-top: 2px; }
