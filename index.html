@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>お酒フォト記録</title>
+<title>Sake-log</title>
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="favicon-32.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -148,9 +148,10 @@
       <section class="screen" id="screen-search" hidden>
         <div class="search-field">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
-          <input type="search" id="search-input" placeholder="ひらがな・カタカナ・一部一致でOK">
+          <input type="search" id="search-input" placeholder="銘柄名・蔵元名・場所で検索">
         </div>
-        <p class="guide-text" id="search-empty-text">銘柄名や蔵元名を入力すると、飲んだことがあるか一瞬で分かる。</p>
+        <div class="place-tags" id="search-place-tags"></div>
+        <p class="guide-text" id="search-empty-text">銘柄名や蔵元名、飲んだ場所を入力すると、飲んだことがあるか一瞬で分かる。</p>
         <p class="guide-text" id="search-noresults-text" hidden></p>
         <div class="search-results" id="search-results"></div>
       </section>
