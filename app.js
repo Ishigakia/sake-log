@@ -824,16 +824,32 @@ function renderSearchPlaceTags() {
   state.allRecords.forEach((r) => {
     if (r.place) counts[r.place] = (counts[r.place] || 0) + 1;
   });
-  const places = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
   tagsEl.innerHTML = "";
+
+  // 選択中は他のタグを隠し、選んだタグ(解除ボタン付き)だけを表示する。
+  // 一覧の中で色が変わるだけだと選んだことに気づきにくいため、見た目ごと切り替えて分かりやすくする。
+  if (state.searchPlaceTag) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "place-tag active";
+    btn.textContent = `#${state.searchPlaceTag} ${counts[state.searchPlaceTag] || 0}件 ✕`;
+    btn.addEventListener("click", () => {
+      state.searchPlaceTag = "";
+      renderSearchResults();
+    });
+    tagsEl.appendChild(btn);
+    return;
+  }
+
+  const places = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
   for (const place of places) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = place === state.searchPlaceTag ? "place-tag active" : "place-tag";
+    btn.className = "place-tag";
     btn.textContent = `#${place} ${counts[place]}件`;
     btn.addEventListener("click", () => {
-      state.searchPlaceTag = place === state.searchPlaceTag ? "" : place;
+      state.searchPlaceTag = place;
       renderSearchResults();
     });
     tagsEl.appendChild(btn);

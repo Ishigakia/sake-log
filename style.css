@@ -804,17 +804,16 @@ body {
   margin-bottom: 6px;
 }
 
+/* flexのwrapで7列に折り返す作りだと、列幅の端数処理(サブピクセル)が行ごとに微妙にズレて、
+   行の高さがバラつく・行間に不揃いな隙間ができる不具合が出た。行×列がはっきりしているCSS Gridに変更し、
+   同じ行のセルは必ず同じ高さになるようにする(cal-weekdaysの見出し行と同じ手法) */
 .cal-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
   gap: 4px;
-  align-items: flex-start;
 }
 
-/* 正方形はcal-cell自身で確定させる(子要素まかせだと、行内に1つでも高さがずれるセルがあった場合に
-   flexのstretchで同じ行全体が引きずられて縦長になる。実際に写真セルの高さが崩れてバッジ位置がずれた不具合があった) */
 .cal-cell {
-  flex: 0 0 calc((100% - 24px) / 7);
   aspect-ratio: 1 / 1;
   position: relative;
   cursor: pointer;
