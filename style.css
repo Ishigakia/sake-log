@@ -804,30 +804,27 @@ body {
   margin-bottom: 6px;
 }
 
-/* flexのwrapで7列に折り返す作りだと、列幅の端数処理(サブピクセル)が行ごとに微妙にズレて、
-   行の高さがバラつく・行間に不揃いな隙間ができる不具合が出た。行×列がはっきりしているCSS Gridに変更。
-   正方形の作り方も aspect-ratio (環境によって高さが0になり真っ白になる不具合が出た) をやめて、
-   「上下の余白(padding-top:100%)で正方形の高さを確保する」昔ながらの確実な方法にする */
+/* aspect-ratio・padding-top(%)など「比率だけで正方形にする」CSSのテクニックは、
+   環境によって高さの計算がおかしくなる(0になって真っ白/逆に巨大になる)不具合が繰り返し出た。
+   実際のマス目の1辺のサイズ(--cal-cell-size)はJS側(renderCalendar)でピクセル計算して
+   直接指定し、CSS側は素直にそのサイズをwidth/heightに使うだけにする */
 .cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
 .cal-cell {
+  width: var(--cal-cell-size, 40px);
+  height: var(--cal-cell-size, 40px);
   position: relative;
   cursor: pointer;
 }
-.cal-cell::before {
-  content: "";
-  display: block;
-  padding-top: 100%;
-}
-.cal-cell.empty { cursor: default; }
+.cal-cell.cal-empty { cursor: default; }
 
 .cal-thumb {
-  position: absolute;
-  inset: 0;
+  width: 100%;
+  height: 100%;
   border-radius: 8px;
   overflow: hidden;
   background: var(--paper-raised);
@@ -835,7 +832,7 @@ body {
   align-items: center;
   justify-content: center;
 }
-.cal-cell.empty .cal-thumb { background: transparent; }
+.cal-cell.cal-empty .cal-thumb { background: transparent; }
 
 .cal-cell .day-num {
   position: absolute;

@@ -690,7 +690,7 @@ async function renderCalendar() {
   revokeLiveUrls();
   let html = "";
   for (let i = 0; i < firstWeekdayMon0; i++) {
-    html += `<div class="cal-cell empty"><div class="cal-thumb"></div></div>`;
+    html += `<div class="cal-cell cal-empty"><div class="cal-thumb"></div></div>`;
   }
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthPrefix}-${pad2(d)}`;
@@ -716,8 +716,10 @@ async function renderCalendar() {
     }
   }
   const calGrid = document.getElementById("cal-grid");
+  const cellSize = (calGrid.clientWidth - 4 * 6) / 7;
+  calGrid.style.setProperty("--cal-cell-size", `${cellSize}px`);
   calGrid.innerHTML = html;
-  calGrid.querySelectorAll(".cal-cell:not(.empty)").forEach((cell) => {
+  calGrid.querySelectorAll(".cal-cell:not(.cal-empty)").forEach((cell) => {
     cell.addEventListener("click", () => {
       state.calendarSelectedDate = cell.dataset.date;
       renderCalendar();
@@ -726,6 +728,10 @@ async function renderCalendar() {
 
   renderCalendarDayList();
 }
+
+window.addEventListener("resize", () => {
+  if (state.screen === "collection" && state.collectionView === "calendar") renderCalendar();
+});
 
 function renderCalendarDayList() {
   const container = document.getElementById("cal-daylist");
