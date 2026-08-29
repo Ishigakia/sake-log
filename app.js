@@ -807,6 +807,38 @@ document.getElementById("view-cal-btn").addEventListener("click", () => {
 });
 
 // --- 検索画面 ---
+function highlightMatch(text, q, queryLength) {
+  const idx = toHiragana(text).indexOf(q);
+  if (idx < 0) return escapeHtml(text);
+  const before = text.slice(0, idx);
+  const match = text.slice(idx, idx + queryLength);
+  const after = text.slice(idx + queryLength);
+  return `${escapeHtml(before)}<mark>${escapeHtml(match)}</mark>${escapeHtml(after)}`;
+}
+
+function renderSearchPlaceTags() {
+  const tagsEl = document.getElementById("search-place-tags");
+  const counts = {};
+  state.allRecords.forEach((r) => {
+    if (r.place) counts[r.place] = (counts[r.place] || 0) + 1;
+  });
+  const places = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+  tagsEl.innerHTML = "";
+  for (const place of places) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "place-tag";
+    btn.textContent = `#${place} ${counts[place]}件`;
+    btn.addEventListener("click", () => {
+      state.searchQuery = place;
+      document.getElementById("search-input").value = place;
+      renderSearchResults();
+    });
+    tagsEl.appendChild(btn);
+  }
+}
+
 async function renderSearchResults() {
   state.allRecords = await getAllRecords();
   const container = document.getElementById("search-results");
@@ -817,6 +849,7 @@ async function renderSearchResults() {
 
   container.innerHTML = "";
   revokeLiveUrls();
+  renderSearchPlaceTags();
 
   if (!query) {
     emptyText.hidden = false;
@@ -826,7 +859,7 @@ async function renderSearchResults() {
   emptyText.hidden = true;
 
   const results = state.allRecords.filter(
-    (r) => toHiragana(r.brand).includes(q) || toHiragana(r.brewery).includes(q)
+    (r) => toHiragana(r.brand).includes(q) || toHiragana(r.brewery).includes(q) || toHiragana(r.place).includes(q)
   );
 
   if (results.length === 0) {
@@ -854,19 +887,11 @@ async function renderSearchResults() {
     row.appendChild(thumb);
 
     const info = document.createElement("div");
-    const idx = toHiragana(record.brand).indexOf(q);
-    let nameHtml;
-    if (idx >= 0) {
-      const before = record.brand.slice(0, idx);
-      const match = record.brand.slice(idx, idx + query.length);
-      const after = record.brand.slice(idx + query.length);
-      nameHtml = `${escapeHtml(before)}<mark>${escapeHtml(match)}</mark>${escapeHtml(after)}`;
-    } else {
-      nameHtml = escapeHtml(record.brand);
-    }
+    const nameHtml = highlightMatch(record.brand, q, query.length);
+    const placePart = record.place ? `・${highlightMatch(record.place, q, query.length)}` : "";
     info.innerHTML = `
       <div class="result-name">${nameHtml}</div>
-      <div class="result-sub">${escapeHtml(record.brewery)}・${escapeHtml(record.date)}</div>
+      <div class="result-sub">${escapeHtml(record.brewery)}・${escapeHtml(record.date)}${placePart}</div>
     `;
     row.appendChild(info);
 
