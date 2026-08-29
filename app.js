@@ -436,6 +436,7 @@ const state = {
   calendarMonth: new Date(),
   calendarSelectedDate: null,
   searchQuery: "",
+  searchPlaceTag: "",
 };
 
 // また飲みたい度ピッカーの現在値を読むためのハンドル(登録フォーム・詳細編集フォームそれぞれ)
@@ -808,6 +809,7 @@ document.getElementById("view-cal-btn").addEventListener("click", () => {
 
 // --- 検索画面 ---
 function highlightMatch(text, q, queryLength) {
+  if (!q) return escapeHtml(text);
   const idx = toHiragana(text).indexOf(q);
   if (idx < 0) return escapeHtml(text);
   const before = text.slice(0, idx);
@@ -828,11 +830,10 @@ function renderSearchPlaceTags() {
   for (const place of places) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "place-tag";
+    btn.className = place === state.searchPlaceTag ? "place-tag active" : "place-tag";
     btn.textContent = `#${place} ${counts[place]}件`;
     btn.addEventListener("click", () => {
-      state.searchQuery = place;
-      document.getElementById("search-input").value = place;
+      state.searchPlaceTag = place === state.searchPlaceTag ? "" : place;
       renderSearchResults();
     });
     tagsEl.appendChild(btn);
@@ -846,25 +847,30 @@ async function renderSearchResults() {
   const noResultsText = document.getElementById("search-noresults-text");
   const query = state.searchQuery.trim();
   const q = toHiragana(query);
+  const placeTag = state.searchPlaceTag;
 
   container.innerHTML = "";
   revokeLiveUrls();
   renderSearchPlaceTags();
 
-  if (!query) {
+  if (!query && !placeTag) {
     emptyText.hidden = false;
     noResultsText.hidden = true;
     return;
   }
   emptyText.hidden = true;
 
-  const results = state.allRecords.filter(
-    (r) => toHiragana(r.brand).includes(q) || toHiragana(r.brewery).includes(q) || toHiragana(r.place).includes(q)
-  );
+  const results = state.allRecords.filter((r) => {
+    const matchesQuery =
+      !query || toHiragana(r.brand).includes(q) || toHiragana(r.brewery).includes(q) || toHiragana(r.place).includes(q);
+    const matchesTag = !placeTag || r.place === placeTag;
+    return matchesQuery && matchesTag;
+  });
 
   if (results.length === 0) {
     noResultsText.hidden = false;
-    noResultsText.textContent = `「${query}」は記録の中に見つからなかった。まだ飲んだことがないかも。`;
+    const label = [placeTag, query].filter(Boolean).join("・");
+    noResultsText.textContent = `「${label}」は記録の中に見つからなかった。まだ飲んだことがないかも。`;
     return;
   }
   noResultsText.hidden = true;

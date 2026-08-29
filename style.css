@@ -437,7 +437,11 @@ body {
   color: var(--ink-soft);
 }
 
-.place-tag:active { background: var(--accent-tint); color: var(--accent-ink); }
+.place-tag:active,
+.place-tag.active {
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
 
 .tag-accent {
   display: block;
@@ -804,19 +808,22 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  align-items: flex-start;
 }
 
+/* 正方形はcal-cell自身で確定させる(子要素まかせだと、行内に1つでも高さがずれるセルがあった場合に
+   flexのstretchで同じ行全体が引きずられて縦長になる。実際に写真セルの高さが崩れてバッジ位置がずれた不具合があった) */
 .cal-cell {
   flex: 0 0 calc((100% - 24px) / 7);
+  aspect-ratio: 1 / 1;
   position: relative;
   cursor: pointer;
 }
 .cal-cell.empty { cursor: default; }
 
-/* サムネイルの正方形はここで確定させる(.shot-photoと同じ考え方: 見た目の四角は専用の子要素が担当し、
-   .cal-cell自体はflexアイテムとして幅だけ決まればよく、高さの取り合いに影響されないようにする) */
 .cal-thumb {
-  aspect-ratio: 1 / 1;
+  width: 100%;
+  height: 100%;
   border-radius: 8px;
   overflow: hidden;
   background: var(--paper-raised);
